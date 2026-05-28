@@ -1,0 +1,11 @@
+*.xlsx
+*.xls
+*.csv
+*.json
+_백업_*/
+클로드 제작/
+ids.indexOf(id)!
+node_modules/
+.env
+.env.*
+*.log
