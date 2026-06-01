@@ -294,10 +294,10 @@ function getSelectedPeriodLabel() {
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
-    return normalizeState(JSON.parse(saved));
+    return prepareState(JSON.parse(saved));
   }
 
-  return createDefaultState();
+  return prepareState(createDefaultState());
 }
 
 function createDefaultState() {
@@ -374,6 +374,109 @@ function normalizeState(input) {
     normalized.accounts = deriveAccountsFromData(normalized);
   }
   return normalized;
+}
+
+function prepareState(input) {
+  return reconcileRecordsWithItemDetails(normalizeState(input));
+}
+
+function reconcileRecordsWithItemDetails(targetState = state) {
+  if (!targetState || !Array.isArray(targetState.records) || !Array.isArray(targetState.itemRecords)) {
+    return targetState;
+  }
+
+  const detailMap = new Map();
+  targetState.itemRecords.forEach((item) => {
+    const account = getCanonicalAccountName(targetState, item.account);
+    const key = `${item.month}__${normalizeAccountKey(account)}`;
+    if (!detailMap.has(key)) {
+      detailMap.set(key, {
+        month: item.month,
+        account,
+        sales: 0,
+        cost: 0,
+        items: new Map(),
+      });
+    }
+    const detail = detailMap.get(key);
+    const sales = Number(item.sales) || 0;
+    const cost = Number(item.cost) || 0;
+    const itemKey = normalizeItemKey(item.item);
+    const itemSummary = detail.items.get(itemKey) || { name: item.item, sales: 0 };
+    detail.sales += sales;
+    detail.cost += cost;
+    itemSummary.sales += sales;
+    detail.items.set(itemKey, itemSummary);
+  });
+
+  if (!detailMap.size) return targetState;
+
+  const usedDetailKeys = new Set();
+  const nextRecords = [];
+
+  targetState.records.forEach((record) => {
+    const account = getCanonicalAccountName(targetState, record.account);
+    const key = `${record.month}__${normalizeAccountKey(account)}`;
+    const detail = detailMap.get(key);
+
+    if (!detail) {
+      nextRecords.push(record);
+      return;
+    }
+
+    if (usedDetailKeys.has(key)) return;
+    usedDetailKeys.add(key);
+    nextRecords.push({
+      ...record,
+      account: detail.account,
+      sales: Math.round(detail.sales),
+      cost: Math.round(detail.cost),
+      items: summarizeDetailItems(detail.items),
+    });
+  });
+
+  detailMap.forEach((detail, key) => {
+    if (usedDetailKeys.has(key)) return;
+    nextRecords.push({
+      id: cryptoId(),
+      month: detail.month,
+      account: detail.account,
+      channel: "\uB300\uAE30\uC5C5\uB0A9\uD488",
+      sales: Math.round(detail.sales),
+      cost: Math.round(detail.cost),
+      items: summarizeDetailItems(detail.items),
+    });
+  });
+
+  targetState.records = nextRecords;
+  return targetState;
+}
+
+function getCanonicalAccountName(targetState, raw) {
+  const text = getCellText(raw);
+  const key = normalizeAccountKey(text);
+  if (!key) return text;
+  const accounts = Array.isArray(targetState.accounts) ? targetState.accounts : [];
+
+  for (const account of accounts) {
+    if (normalizeAccountKey(account.name) === key) return account.name;
+    if ((account.aliases || []).some((alias) => normalizeAccountKey(alias) === key)) return account.name;
+  }
+
+  for (const account of accounts) {
+    if (accountsLookSame(normalizeAccountKey(account.name), key)) return account.name;
+    if ((account.aliases || []).some((alias) => accountsLookSame(normalizeAccountKey(alias), key))) return account.name;
+  }
+
+  return text;
+}
+
+function summarizeDetailItems(items) {
+  return [...items.values()]
+    .sort((a, b) => b.sales - a.sales || a.name.localeCompare(b.name, "ko"))
+    .slice(0, 5)
+    .map((item) => item.name)
+    .join(", ");
 }
 
 // 실적/품목/목표배분/액션에 등장하는 거래처명을 모아 마스터 초기 목록 생성
@@ -1579,6 +1682,7 @@ function importExcelAnalysis() {
     const itemResult = importExcelItemDetails(excelAnalysis.itemDetails);
     itemUpdated = itemResult.updated;
     itemAdded = itemResult.added;
+    reconcileRecordsWithItemDetails();
   }
 
   const firstMonth = excelAnalysis.rows[0].month;
@@ -2233,7 +2337,7 @@ async function loadStateFromSupabase({ showMessage = false } = {}) {
       showToast("Supabase 서버에 저장된 데이터가 없습니다. 먼저 현재 데이터를 서버에 저장해 주세요.", "error");
       return;
     }
-    state = normalizeState(serverRow.data);
+    state = prepareState(serverRow.data);
     supabaseLastSyncedAt = serverRow.updated_at || "";
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     fillYearOptions();
@@ -2255,8 +2359,8 @@ async function fetchSupabaseStateRow() {
 }
 
 function mergeStateForSupabase(serverData, localData) {
-  const server = normalizeState(serverData);
-  const local = normalizeState(localData);
+  const server = prepareState(serverData);
+  const local = prepareState(localData);
   const merged = {
     ...server,
     ...local,
@@ -2266,7 +2370,7 @@ function mergeStateForSupabase(serverData, localData) {
     accounts: mergeAccountsForSync(server.accounts, local.accounts),
     goals: mergeGoalsForSync(server.goals, local.goals),
   };
-  return normalizeState(merged);
+  return prepareState(merged);
 }
 
 function mergeById(serverItems = [], localItems = []) {
@@ -2809,7 +2913,7 @@ async function loadStateFromFile({ showMessage = false } = {}) {
       await saveStateToFile(true);
       return;
     }
-    state = normalizeState(JSON.parse(text));
+    state = prepareState(JSON.parse(text));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     needsFilePermission = false;
     renderAll();
@@ -2885,7 +2989,7 @@ function importJsonBackup(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      state = normalizeState(JSON.parse(reader.result));
+      state = prepareState(JSON.parse(reader.result));
       saveState();
       renderAll();
       showToast("백업 데이터를 불러왔습니다.", "success");
