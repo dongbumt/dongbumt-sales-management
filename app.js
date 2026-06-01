@@ -2531,6 +2531,15 @@ function addAliasToAccount(account, alias) {
   account.aliases.push(text);
 }
 
+function addAliasToAccount(account, alias) {
+  const text = getCellText(alias);
+  if (!text) return;
+  account.aliases = account.aliases || [];
+  if (text === getCellText(account.name)) return;
+  if (account.aliases.some((a) => getCellText(a) === text)) return;
+  account.aliases.push(text);
+}
+
 function countAccountRecords(account) {
   const keys = new Set([normalizeAccountKey(account.name), ...(account.aliases || []).map(normalizeAccountKey)]);
   const matches = (name) => keys.has(normalizeAccountKey(name));
@@ -2632,6 +2641,26 @@ function promptAddAlias(id) {
     saveState();
     renderAll();
     showToast("별칭을 추가했습니다.", "success");
+  }
+}
+
+function promptAddAlias(id) {
+  const account = state.accounts.find((a) => a.id === id);
+  if (!account) return;
+  const input = prompt(`'${account.name}'에 추가할 별칭을 입력하세요. 여러 개는 쉼표로 구분할 수 있습니다.`);
+  if (input === null) return;
+  const before = (account.aliases || []).length;
+  input
+    .split(",")
+    .map((alias) => alias.trim())
+    .filter(Boolean)
+    .forEach((alias) => addAliasToAccount(account, alias));
+  if ((account.aliases || []).length > before) {
+    saveState();
+    renderAll();
+    showToast("별칭을 추가했습니다.", "success");
+  } else {
+    showToast("이미 등록된 별칭이거나 정식명과 완전히 같은 이름입니다.", "error");
   }
 }
 
