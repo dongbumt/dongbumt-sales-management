@@ -15,6 +15,7 @@ const monthByQuarter = {
   Q4: ["10", "11", "12"],
 };
 const ALL_QUARTER = "ALL";
+const DELETED_ID_TYPES = ["records", "itemRecords", "actions", "accounts", "allocations", "extraGoals"];
 
 const viewTitles = {
   dashboard: "대시보드",
@@ -330,6 +331,7 @@ function createDefaultState() {
     accountChartAccount: "전체",
     itemAnalysisPeriod: "quarter",
     itemAnalysisMonth: `${currentYear}-${monthByQuarter[currentQuarter][0]}`,
+    deletedIds: normalizeDeletedIds(),
     accounts: [],
     records: [
       sampleRecord("2026-04", "한빛푸드", "대기업납품", 118000000, 101200000, "돈육 전지, 삼겹"),
@@ -387,7 +389,16 @@ function normalizeState(input) {
     goals: source.goals && typeof source.goals === "object" && !Array.isArray(source.goals) ? source.goals : fallback.goals,
     actions: Array.isArray(source.actions) ? source.actions.map(normalizeAction).filter(Boolean) : fallback.actions,
     accounts: Array.isArray(source.accounts) ? source.accounts.map(normalizeAccount).filter(Boolean) : [],
+    deletedIds: normalizeDeletedIds(source.deletedIds || fallback.deletedIds),
   };
+  normalized.records = filterDeleted(normalized.records, normalized.deletedIds, "records");
+  normalized.itemRecords = filterDeleted(normalized.itemRecords, normalized.deletedIds, "itemRecords");
+  normalized.actions = filterDeleted(normalized.actions, normalized.deletedIds, "actions");
+  normalized.accounts = filterDeleted(normalized.accounts, normalized.deletedIds, "accounts");
+  Object.values(normalized.goals || {}).forEach((goal) => {
+    goal.allocations = filterDeleted(goal.allocations || [], normalized.deletedIds, "allocations");
+    goal.extraGoals = filterDeleted(goal.extraGoals || [], normalized.deletedIds, "extraGoals");
+  });
   // 거래처 마스터가 비어 있으면 실적/목표/액션의 거래처명으로 자동 채움(모든 로드 경로 공통)
   if (!normalized.accounts.length) {
     normalized.accounts = deriveAccountsFromData(normalized);
@@ -517,6 +528,45 @@ function normalizeAccount(account) {
     owner: getCellText(account.owner || account.manager),
     aliases,
   };
+}
+
+function normalizeDeletedIds(source = {}) {
+  return DELETED_ID_TYPES.reduce((result, type) => {
+    result[type] = normalizeDeletedIdList(source[type]);
+    return result;
+  }, {});
+}
+
+function normalizeDeletedIdList(list) {
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+function mergeDeletedIds(serverDeleted = {}, localDeleted = {}) {
+  const server = normalizeDeletedIds(serverDeleted);
+  const local = normalizeDeletedIds(localDeleted);
+  return DELETED_ID_TYPES.reduce((result, type) => {
+    result[type] = [...new Set([...server[type], ...local[type]])];
+    return result;
+  }, {});
+}
+
+function rememberDeletedId(type, id) {
+  if (!DELETED_ID_TYPES.includes(type) || !id) return;
+  state.deletedIds = normalizeDeletedIds(state.deletedIds);
+  const textId = String(id);
+  if (!state.deletedIds[type].includes(textId)) {
+    state.deletedIds[type].push(textId);
+  }
+}
+
+function isDeleted(deletedIds, type, id) {
+  if (!id) return false;
+  return normalizeDeletedIds(deletedIds)[type].includes(String(id));
+}
+
+function filterDeleted(items = [], deletedIds = {}, type) {
+  return (Array.isArray(items) ? items : []).filter((item) => !isDeleted(deletedIds, type, item?.id));
 }
 
 // 마스터가 비어 있으면 기존 실적/목표/액션의 거래처명으로 자동 시드
@@ -1264,6 +1314,8 @@ function deleteRecord(id) {
     : "이 실적을 삭제할까요?";
   if (!confirm(message)) return;
 
+  rememberDeletedId("records", id);
+  itemMatches.forEach((item) => rememberDeletedId("itemRecords", item.id));
   state.records = state.records.filter((record) => record.id !== id);
   if (!otherSameRecord) {
     state.itemRecords = state.itemRecords.filter((item) => !sameKey(item.month, item.account));
@@ -2295,6 +2347,7 @@ function updateExtraGoalStatus(id, status) {
 function deleteExtraGoal(id) {
   if (!confirm("이 부가 목표를 삭제할까요?")) return;
   const goal = getGoal();
+  rememberDeletedId("extraGoals", id);
   goal.extraGoals = (goal.extraGoals || []).filter((row) => row.id !== id);
   if (el.extraGoalEditIdInput.value === id) resetExtraGoalForm();
   saveState();
@@ -2328,6 +2381,7 @@ function resetAllocationForm() {
 function deleteAllocation(id) {
   if (!confirm("이 목표 배분을 삭제할까요?")) return;
   const goal = getGoal();
+  rememberDeletedId("allocations", id);
   goal.allocations = goal.allocations.filter((allocation) => allocation.id !== id);
   if (el.allocationEditIdInput.value === id) resetAllocationForm();
   syncGoalTargets(goal);
@@ -2403,6 +2457,7 @@ function updateActionStatus(id, status) {
 
 function deleteAction(id) {
   if (!confirm("이 실행계획을 삭제할까요?")) return;
+  rememberDeletedId("actions", id);
   state.actions = state.actions.filter((action) => action.id !== id);
   saveState();
   renderAll();
@@ -2764,14 +2819,16 @@ async function fetchSupabaseStateRow() {
 function mergeStateForSupabase(serverData, localData) {
   const server = prepareState(serverData);
   const local = prepareState(localData);
+  const deletedIds = mergeDeletedIds(server.deletedIds, local.deletedIds);
   const merged = {
     ...server,
     ...local,
-    records: mergeById(server.records, local.records),
-    itemRecords: mergeById(server.itemRecords, local.itemRecords),
-    actions: mergeById(server.actions, local.actions),
-    accounts: mergeAccountsForSync(server.accounts, local.accounts),
-    goals: mergeGoalsForSync(server.goals, local.goals),
+    deletedIds,
+    records: mergeById(filterDeleted(server.records, deletedIds, "records"), filterDeleted(local.records, deletedIds, "records")),
+    itemRecords: mergeById(filterDeleted(server.itemRecords, deletedIds, "itemRecords"), filterDeleted(local.itemRecords, deletedIds, "itemRecords")),
+    actions: mergeById(filterDeleted(server.actions, deletedIds, "actions"), filterDeleted(local.actions, deletedIds, "actions")),
+    accounts: mergeAccountsForSync(filterDeleted(server.accounts, deletedIds, "accounts"), filterDeleted(local.accounts, deletedIds, "accounts")),
+    goals: mergeGoalsForSync(server.goals, local.goals, deletedIds),
   };
   return prepareState(merged);
 }
@@ -2798,20 +2855,28 @@ function mergeAccountsForSync(serverAccounts = [], localAccounts = []) {
   return [...map.values()];
 }
 
-function mergeGoalsForSync(serverGoals = {}, localGoals = {}) {
+function mergeGoalsForSync(serverGoals = {}, localGoals = {}, deletedIds = {}) {
   const result = { ...serverGoals };
   Object.entries(localGoals).forEach(([key, localGoal]) => {
     const serverGoal = result[key];
     if (!serverGoal) {
-      result[key] = localGoal;
+      result[key] = {
+        ...localGoal,
+        allocations: filterDeleted(localGoal.allocations || [], deletedIds, "allocations"),
+        extraGoals: filterDeleted(localGoal.extraGoals || [], deletedIds, "extraGoals"),
+      };
       return;
     }
     result[key] = {
       ...serverGoal,
       ...localGoal,
-      allocations: mergeById(serverGoal.allocations || [], localGoal.allocations || []),
-      extraGoals: mergeById(serverGoal.extraGoals || [], localGoal.extraGoals || []),
+      allocations: mergeById(filterDeleted(serverGoal.allocations || [], deletedIds, "allocations"), filterDeleted(localGoal.allocations || [], deletedIds, "allocations")),
+      extraGoals: mergeById(filterDeleted(serverGoal.extraGoals || [], deletedIds, "extraGoals"), filterDeleted(localGoal.extraGoals || [], deletedIds, "extraGoals")),
     };
+  });
+  Object.values(result).forEach((goal) => {
+    goal.allocations = filterDeleted(goal.allocations || [], deletedIds, "allocations");
+    goal.extraGoals = filterDeleted(goal.extraGoals || [], deletedIds, "extraGoals");
   });
   Object.values(result).forEach((goal) => syncGoalTargets(goal));
   return result;
@@ -3133,6 +3198,7 @@ function mergeAccounts(fromId, toId) {
   state.actions.forEach(apply);
   Object.values(state.goals || {}).forEach((goal) => (goal.allocations || []).forEach(apply));
   // from 제거
+  rememberDeletedId("accounts", fromId);
   state.accounts = state.accounts.filter((a) => a.id !== fromId);
   saveState();
   renderAll();
@@ -3148,6 +3214,7 @@ function deleteAccountMaster(id) {
   } else if (!confirm(`'${account.name}'을(를) 마스터에서 삭제할까요?`)) {
     return;
   }
+  rememberDeletedId("accounts", id);
   state.accounts = state.accounts.filter((a) => a.id !== id);
   saveState();
   renderAll();
