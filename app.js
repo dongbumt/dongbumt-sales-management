@@ -2406,7 +2406,7 @@ function renderAccountTrendChart(records, selectedAccount, monthKeys, label) {
           <footer>
             <strong>${item.label}</strong>
             <span>매출 ${won(item.sales)}</span>
-            <span>이익 ${won(item.profit)}</span>
+            <span>이익 ${won(item.profit)} · 이익률 ${item.margin.toFixed(1)}%</span>
           </footer>
         </article>
       `;
