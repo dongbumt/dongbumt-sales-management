@@ -103,6 +103,12 @@ const el = {
   allocationAccountInput: document.querySelector("#allocationAccountInput"),
   allocationSalesInput: document.querySelector("#allocationSalesInput"),
   allocationProfitInput: document.querySelector("#allocationProfitInput"),
+  allocationPlanTitleInput: document.querySelector("#allocationPlanTitleInput"),
+  allocationPlanTypeInput: document.querySelector("#allocationPlanTypeInput"),
+  allocationPlanOwnerInput: document.querySelector("#allocationPlanOwnerInput"),
+  allocationPlanDueInput: document.querySelector("#allocationPlanDueInput"),
+  allocationPlanSalesInput: document.querySelector("#allocationPlanSalesInput"),
+  allocationPlanProfitInput: document.querySelector("#allocationPlanProfitInput"),
   allocationSubmitButton: document.querySelector("#allocationSubmitButton"),
   allocationCancelButton: document.querySelector("#allocationCancelButton"),
   allocationRows: document.querySelector("#allocationRows"),
@@ -120,15 +126,6 @@ const el = {
   extraGoalSubmitButton: document.querySelector("#extraGoalSubmitButton"),
   extraGoalCancelButton: document.querySelector("#extraGoalCancelButton"),
   extraGoalRows: document.querySelector("#extraGoalRows"),
-  actionForm: document.querySelector("#actionForm"),
-  actionTitleInput: document.querySelector("#actionTitleInput"),
-  actionAccountInput: document.querySelector("#actionAccountInput"),
-  actionTypeInput: document.querySelector("#actionTypeInput"),
-  actionOwnerInput: document.querySelector("#actionOwnerInput"),
-  actionDueInput: document.querySelector("#actionDueInput"),
-  actionSalesInput: document.querySelector("#actionSalesInput"),
-  actionProfitInput: document.querySelector("#actionProfitInput"),
-  actionStatusInput: document.querySelector("#actionStatusInput"),
   statusFilter: document.querySelector("#statusFilter"),
   actionRows: document.querySelector("#actionRows"),
   actionSummary: document.querySelector("#actionSummary"),
@@ -180,7 +177,7 @@ function init() {
   el.yearSelect.value = state.activeYear;
   el.quarterSelect.value = state.activeQuarter;
   el.monthInput.value = getDefaultMonthInputValue();
-  el.actionDueInput.value = getDefaultDueDate();
+  if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
 
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => setView(button.dataset.view));
@@ -207,6 +204,7 @@ function init() {
   el.quarterSelect.addEventListener("change", () => {
     state.activeQuarter = el.quarterSelect.value;
     el.monthInput.value = getDefaultMonthInputValue();
+    if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
     saveState();
     renderAll();
   });
@@ -218,7 +216,7 @@ function init() {
     renderAccounts();
   });
   el.itemAccountFilter.addEventListener("change", renderItemAnalysis);
-  el.statusFilter.addEventListener("change", renderActions);
+  if (el.statusFilter) el.statusFilter.addEventListener("change", renderActions);
   el.printButton.addEventListener("click", () => window.print());
   el.excelFileInput.addEventListener("change", handleExcelFile);
   el.analyzeExcelButton.addEventListener("click", analyzeExcelRows);
@@ -663,6 +661,10 @@ function bindForms() {
 
   el.allocationForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (el.allocationPlanTitleInput?.value.trim() && state.activeQuarter === ALL_QUARTER) {
+      showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+      return;
+    }
     const goal = getGoal();
     const editId = el.allocationEditIdInput.value;
     const payload = {
@@ -676,6 +678,7 @@ function bindForms() {
     } else {
       goal.allocations.push({ id: cryptoId(), ...payload });
     }
+    addAllocationPlanFromInputs(payload.account);
     syncGoalTargets(goal);
     resetAllocationForm();
     saveState();
@@ -714,29 +717,31 @@ function bindForms() {
     el.extraGoalCancelButton.addEventListener("click", resetExtraGoalForm);
   }
 
-  el.actionForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (state.activeQuarter === ALL_QUARTER) {
-      showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
-      return;
-    }
-    state.actions.push({
+}
+
+function addAllocationPlanFromInputs(account) {
+  if (!el.allocationPlanTitleInput) return false;
+  const title = el.allocationPlanTitleInput.value.trim();
+  if (!title) return false;
+  if (state.activeQuarter === ALL_QUARTER) {
+    showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+    return false;
+  }
+  state.actions.push(
+    normalizeAction({
       id: cryptoId(),
-      title: el.actionTitleInput.value.trim(),
-      account: ensureAccountFromImport(el.actionAccountInput.value.trim()),
-      type: el.actionTypeInput.value,
-      owner: el.actionOwnerInput.value.trim(),
-      due: el.actionDueInput.value,
-      expectedSales: Number(el.actionSalesInput.value),
-      expectedProfit: Number(el.actionProfitInput.value),
-      status: el.actionStatusInput.value,
+      title,
+      account,
+      type: el.allocationPlanTypeInput.value,
+      owner: el.allocationPlanOwnerInput.value.trim(),
+      due: el.allocationPlanDueInput.value || getDefaultDueDate(),
+      expectedSales: Number(el.allocationPlanSalesInput.value) || 0,
+      expectedProfit: Number(el.allocationPlanProfitInput.value) || 0,
+      status: "예정",
       quarterKey: getSelectedKey(),
-    });
-    el.actionForm.reset();
-    el.actionDueInput.value = getDefaultDueDate();
-    saveState();
-    renderAll();
-  });
+    }),
+  );
+  return true;
 }
 
 function bindDataActions() {
@@ -2113,19 +2118,7 @@ function renderAllocationDetail(allocation, actual, plans) {
           <p class="muted">${coverText}</p>
         </div>
         <div class="plan-list">${planList}</div>
-        <form class="plan-inline-form" data-plan-form="${allocation.id}">
-          <label>
-            <span>유형</span>
-            <select data-plan-field="type">
-              ${["발주량 확대", "신규 품목 제안", "단가 재협상", "신규 거래처 발굴", "마진 개선"].map((t) => `<option value="${t}">${t}</option>`).join("")}
-            </select>
-          </label>
-          <label><span>담당</span><input data-plan-field="owner" type="text" placeholder="예: 영업1팀" /></label>
-          <label><span>기한</span><input data-plan-field="due" type="date" value="${getDefaultDueDate()}" /></label>
-          <label><span>기대 매출</span><input data-plan-field="expectedSales" type="number" min="0" step="100000" value="0" /></label>
-          <label><span>기대 이익</span><input data-plan-field="expectedProfit" type="number" min="0" step="10000" value="0" /></label>
-          <button class="primary-button" type="submit">+ 계획 추가</button>
-        </form>
+        <p class="muted">새 실행계획은 위의 거래처별 목표 배분 입력칸에서 목표와 함께 입력합니다.</p>
       </td>
     </tr>
   `;
@@ -2141,12 +2134,6 @@ function bindAllocationRowEvents() {
   document.querySelectorAll("[data-expand-allocation]").forEach((button) => {
     button.addEventListener("click", () => toggleAllocationExpand(button.dataset.expandAllocation));
   });
-  document.querySelectorAll("[data-plan-form]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      addAllocationPlan(form.dataset.planForm, form);
-    });
-  });
   document.querySelectorAll("[data-plan-status]").forEach((select) => {
     select.addEventListener("change", () => updateActionStatus(select.dataset.planStatus, select.value));
   });
@@ -2158,42 +2145,6 @@ function bindAllocationRowEvents() {
 function toggleAllocationExpand(id) {
   expandedAllocationId = expandedAllocationId === id ? null : id;
   renderAllocations(getGoal());
-}
-
-function addAllocationPlan(allocationId, form) {
-  if (state.activeQuarter === ALL_QUARTER) {
-    showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
-    return;
-  }
-  const goal = getGoal();
-  const allocation = goal.allocations.find((item) => item.id === allocationId);
-  if (!allocation) return;
-  const field = (name) => form.querySelector(`[data-plan-field="${name}"]`);
-  const type = field("type").value;
-  const owner = field("owner").value.trim();
-  const due = field("due").value || getDefaultDueDate();
-  const expectedSales = Number(field("expectedSales").value) || 0;
-  const expectedProfit = Number(field("expectedProfit").value) || 0;
-
-  state.actions.push(
-    normalizeAction({
-      id: cryptoId(),
-      title: `${allocation.account} ${type}`,
-      account: allocation.account,
-      type,
-      owner,
-      due,
-      expectedSales,
-      expectedProfit,
-      status: "예정",
-      quarterKey: getSelectedKey(),
-    }),
-  );
-
-  expandedAllocationId = allocationId;
-  saveState();
-  renderAll();
-  showToast(`'${allocation.account}' 실행계획을 추가했습니다. 이름·세부 수정은 실행계획 메뉴에서 가능합니다.`, "success");
 }
 
 function renderManagerGoalSummary(goal) {
@@ -2367,6 +2318,9 @@ function editAllocation(id) {
 function resetAllocationForm() {
   el.allocationForm.reset();
   el.allocationEditIdInput.value = "";
+  if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
+  if (el.allocationPlanSalesInput) el.allocationPlanSalesInput.value = "0";
+  if (el.allocationPlanProfitInput) el.allocationPlanProfitInput.value = "0";
   el.allocationSubmitButton.textContent = "배분 추가";
   el.allocationCancelButton.hidden = true;
 }

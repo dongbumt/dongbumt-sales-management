@@ -342,6 +342,36 @@
                   <span>이익 목표(원)</span>
                   <input id="allocationProfitInput" type="number" min="0" step="1" placeholder="예: 2000000" required />
                 </label>
+                <label class="wide-field">
+                  <span>실행계획(선택)</span>
+                  <input id="allocationPlanTitleInput" type="text" placeholder="예: 동원홈푸드 PB상품 월 2회 제안" />
+                </label>
+                <label>
+                  <span>계획 유형</span>
+                  <select id="allocationPlanTypeInput">
+                    <option value="발주량 확대">발주량 확대</option>
+                    <option value="신규 품목 제안">신규 품목 제안</option>
+                    <option value="단가 재협상">단가 재협상</option>
+                    <option value="신규 거래처 발굴">신규 거래처 발굴</option>
+                    <option value="마진 개선">마진 개선</option>
+                  </select>
+                </label>
+                <label>
+                  <span>담당자</span>
+                  <input id="allocationPlanOwnerInput" type="text" placeholder="예: 영업1팀" />
+                </label>
+                <label>
+                  <span>기한</span>
+                  <input id="allocationPlanDueInput" type="date" />
+                </label>
+                <label>
+                  <span>예상 매출</span>
+                  <input id="allocationPlanSalesInput" type="number" min="0" step="100000" value="0" />
+                </label>
+                <label>
+                  <span>예상 이익</span>
+                  <input id="allocationPlanProfitInput" type="number" min="0" step="10000" value="0" />
+                </label>
                 <button class="secondary-button" type="submit" id="allocationSubmitButton">배분 추가</button>
                 <button class="ghost-button" type="button" id="allocationCancelButton" hidden>수정 취소</button>
               </form>
@@ -464,61 +494,6 @@
                 </table>
               </div>
             </section>
-            <section class="panel wide" id="actions">
-            <div class="panel-header">
-              <div>
-                <h2>실행계획 등록</h2>
-                <p>목표 부족분을 메우는 활동</p>
-              </div>
-            </div>
-            <form class="form-grid action-form" id="actionForm">
-              <label>
-                <span>계획명</span>
-                <input id="actionTitleInput" type="text" required />
-              </label>
-              <label>
-                <span>거래처</span>
-                <input id="actionAccountInput" type="text" required />
-              </label>
-              <label>
-                <span>실행 유형</span>
-                <select id="actionTypeInput">
-                  <option value="발주량 확대">발주량 확대</option>
-                  <option value="신규 품목 제안">신규 품목 제안</option>
-                  <option value="단가 재협상">단가 재협상</option>
-                  <option value="신규 거래처 발굴">신규 거래처 발굴</option>
-                  <option value="마진 개선">마진 개선</option>
-                </select>
-              </label>
-              <label>
-                <span>담당자</span>
-                <input id="actionOwnerInput" type="text" placeholder="예: 영업팀" required />
-              </label>
-              <label>
-                <span>기한</span>
-                <input id="actionDueInput" type="date" required />
-              </label>
-              <label>
-                <span>예상 매출효과</span>
-                <input id="actionSalesInput" type="number" min="0" step="100000" required />
-              </label>
-              <label>
-                <span>예상 이익효과</span>
-                <input id="actionProfitInput" type="number" min="0" step="10000" required />
-              </label>
-              <label>
-                <span>상태</span>
-                <select id="actionStatusInput">
-                  <option value="예정">예정</option>
-                  <option value="진행중">진행중</option>
-                  <option value="완료">완료</option>
-                  <option value="보류">보류</option>
-                </select>
-              </label>
-              <button class="primary-button" type="submit">계획 추가</button>
-            </form>
-          </section>
-
             <section class="panel wide">
             <div class="panel-header table-tools">
               <div>

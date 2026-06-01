@@ -706,21 +706,6 @@ button:focus-visible {
   min-width: 88px;
   min-height: 34px;
 }
-.plan-inline-form {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr)) auto;
-  gap: 8px;
-  align-items: end;
-  border-top: 1px dashed var(--line);
-  padding-top: 12px;
-}
-.plan-inline-form label span {
-  font-size: 11px;
-}
-.plan-inline-form .primary-button {
-  white-space: nowrap;
-}
-
 .extra-goal-form {
   display: grid;
   grid-template-columns: repeat(5, minmax(140px, 1fr));
