@@ -716,6 +716,10 @@ function bindForms() {
 
   el.actionForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (state.activeQuarter === ALL_QUARTER) {
+      showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+      return;
+    }
     state.actions.push({
       id: cryptoId(),
       title: el.actionTitleInput.value.trim(),
@@ -726,6 +730,7 @@ function bindForms() {
       expectedSales: Number(el.actionSalesInput.value),
       expectedProfit: Number(el.actionProfitInput.value),
       status: el.actionStatusInput.value,
+      quarterKey: getSelectedKey(),
     });
     el.actionForm.reset();
     el.actionDueInput.value = getDefaultDueDate();
@@ -2156,6 +2161,10 @@ function toggleAllocationExpand(id) {
 }
 
 function addAllocationPlan(allocationId, form) {
+  if (state.activeQuarter === ALL_QUARTER) {
+    showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+    return;
+  }
   const goal = getGoal();
   const allocation = goal.allocations.find((item) => item.id === allocationId);
   if (!allocation) return;
