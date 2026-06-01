@@ -630,6 +630,97 @@ button:focus-visible {
   margin-bottom: 14px;
 }
 
+/* ===== 배분 행 확장: 실행계획 인라인 ===== */
+.expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.expand-toggle .caret {
+  color: var(--teal);
+  font-size: 11px;
+}
+.allocation-row.expanded {
+  background: #f2f7f6;
+}
+.allocation-detail > td {
+  background: #fbfcfc;
+  padding: 14px 16px;
+}
+.allocation-gap {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.allocation-gap .gap-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+.plan-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.plan-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.plan-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.plan-main strong {
+  font-size: 14px;
+}
+.plan-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.plan-side .status-select {
+  min-width: 88px;
+  min-height: 34px;
+}
+.plan-inline-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+.plan-inline-form label span {
+  font-size: 11px;
+}
+.plan-inline-form .primary-button {
+  white-space: nowrap;
+}
+
 .extra-goal-form {
   display: grid;
   grid-template-columns: repeat(5, minmax(140px, 1fr));

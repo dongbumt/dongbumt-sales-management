@@ -42,6 +42,7 @@ let supabaseSaveTimer = null;
 let supabaseLastSyncedAt = "";
 let supabaseAutoSave = localStorage.getItem(SUPABASE_AUTOSAVE_KEY) !== "false";
 const tableSorts = {};
+let expandedAllocationId = null;
 let excelRows = [];
 let excelAnalysis = null;
 let excelMeta = null;
@@ -574,6 +575,7 @@ function normalizeAction(action) {
     expectedSales: Number(action.expectedSales) || 0,
     expectedProfit: Number(action.expectedProfit) || 0,
     status: action.status || "예정",
+    quarterKey: action.quarterKey || "",
   };
 }
 
@@ -860,7 +862,20 @@ function renderAnalysisControls(kind, buttons, monthInput) {
 
 function getQuarterActions() {
   const months = getSelectedMonthKeys();
-  return state.actions.filter((action) => months.includes(action.due.slice(0, 7)));
+  const key = getSelectedKey();
+  const isAll = state.activeQuarter === ALL_QUARTER;
+  return state.actions.filter((action) => {
+    if (action.quarterKey) {
+      return isAll ? action.quarterKey.startsWith(`${state.activeYear}-`) : action.quarterKey === key;
+    }
+    return months.includes(action.due.slice(0, 7));
+  });
+}
+
+// 특정 거래처에 연결된 이번 분기 실행계획(별칭/표기 차이 흡수)
+function getAllocationActions(account) {
+  const key = normalizeAccountKey(account);
+  return getQuarterActions().filter((action) => accountsLookSame(normalizeAccountKey(action.account), key));
 }
 
 function sum(records, field) {
@@ -1999,6 +2014,7 @@ function renderGoals() {
 function renderAllocations(goal) {
   const accountData = groupByAccount(getQuarterRecords());
   const editingId = el.allocationEditIdInput.value;
+  const planCountOf = (account) => getAllocationActions(account).length;
   const allocations = sortTableRows(goal.allocations, "allocation", {
     account: (allocation) => allocation.account,
     sales: (allocation) => allocation.sales,
@@ -2006,20 +2022,31 @@ function renderAllocations(goal) {
     salesRate: (allocation) => rate((accountData[allocation.account] || { sales: 0 }).sales, allocation.sales),
     profit: (allocation) => allocation.profit,
     actualProfit: (allocation) => (accountData[allocation.account] || { profit: 0 }).profit,
+    planCount: (allocation) => planCountOf(allocation.account),
   }, (a, b) => a.account.localeCompare(b.account, "ko"));
 
   el.allocationRows.innerHTML = goal.allocations.length
     ? allocations
         .map((allocation) => {
           const actual = accountData[allocation.account] || { sales: 0, profit: 0 };
-          return `
-            <tr>
-              <td>${escapeHtml(allocation.account)}</td>
+          const plans = getAllocationActions(allocation.account);
+          const expanded = expandedAllocationId === allocation.id;
+          const pending = plans.filter((plan) => plan.status !== "완료");
+          const planExpected = sum(pending, "expectedSales");
+          const planCell = plans.length ? `${plans.length}건 · 기대 ${won(planExpected)}` : "-";
+          const mainRow = `
+            <tr class="allocation-row${expanded ? " expanded" : ""}">
+              <td>
+                <button class="expand-toggle" type="button" data-expand-allocation="${allocation.id}" aria-expanded="${expanded}">
+                  <span class="caret">${expanded ? "▼" : "▶"}</span>${escapeHtml(allocation.account)}
+                </button>
+              </td>
               <td class="num">${won(allocation.sales)}</td>
               <td class="num">${won(actual.sales)}</td>
               <td class="num">${rate(actual.sales, allocation.sales).toFixed(1)}%</td>
               <td class="num">${won(allocation.profit)}</td>
               <td class="num">${won(actual.profit)}</td>
+              <td class="num">${planCell}</td>
               <td>
                 <div class="table-actions">
                   <button class="secondary-button" type="button" data-edit-allocation="${allocation.id}">${editingId === allocation.id ? "수정중" : "수정"}</button>
@@ -2028,16 +2055,136 @@ function renderAllocations(goal) {
               </td>
             </tr>
           `;
+          return mainRow + (expanded ? renderAllocationDetail(allocation, actual, plans) : "");
         })
         .join("")
-    : `<tr><td colspan="7">${emptyState("거래처별 목표 배분이 없습니다.")}</td></tr>`;
+    : `<tr><td colspan="8">${emptyState("거래처별 목표 배분이 없습니다.")}</td></tr>`;
 
+  bindAllocationRowEvents();
+}
+
+function renderAllocationDetail(allocation, actual, plans) {
+  const salesGap = Math.max(allocation.sales - actual.sales, 0);
+  const profitGap = Math.max(allocation.profit - actual.profit, 0);
+  const pending = plans.filter((plan) => plan.status !== "완료");
+  const planSales = sum(pending, "expectedSales");
+  const planProfit = sum(pending, "expectedProfit");
+  const coverRate = salesGap > 0 ? rate(planSales, salesGap) : 100;
+  const coverText = salesGap > 0
+    ? `미완료 계획의 기대 매출이 부족분의 ${coverRate.toFixed(0)}%를 커버합니다.`
+    : "현재 매출이 목표를 이미 달성했습니다.";
+  const planList = plans.length
+    ? plans
+        .map(
+          (plan) => `
+          <div class="plan-item">
+            <div class="plan-main">
+              <span class="pill ${statusClass(plan.status)}">${plan.status}</span>
+              <strong>${escapeHtml(plan.title || plan.type)}</strong>
+              <span class="muted">${escapeHtml(plan.type)} · ${escapeHtml(plan.owner || "담당 미정")} · ${plan.due}</span>
+            </div>
+            <div class="plan-side">
+              <span>매출 ${won(plan.expectedSales)} / 이익 ${won(plan.expectedProfit)}</span>
+              <select class="status-select" data-plan-status="${plan.id}">
+                ${["예정", "진행중", "완료", "보류"].map((s) => `<option value="${s}" ${s === plan.status ? "selected" : ""}>${s}</option>`).join("")}
+              </select>
+              <button class="danger-button" type="button" data-plan-delete="${plan.id}">삭제</button>
+            </div>
+          </div>
+        `,
+        )
+        .join("")
+    : `<p class="muted">아직 등록된 실행계획이 없습니다. 아래에서 바로 추가하세요.</p>`;
+
+  return `
+    <tr class="allocation-detail">
+      <td colspan="8">
+        <div class="allocation-gap">
+          <div class="gap-row">
+            <span>부족 매출 ${won(salesGap)} · 부족 이익 ${won(profitGap)}</span>
+            <span>계획 기대 매출 ${won(planSales)} · 이익 ${won(planProfit)}</span>
+          </div>
+          <div class="meter ${meterClass(coverRate, 100, 60)}"><span style="width:${Math.min(coverRate, 100)}%"></span></div>
+          <p class="muted">${coverText}</p>
+        </div>
+        <div class="plan-list">${planList}</div>
+        <form class="plan-inline-form" data-plan-form="${allocation.id}">
+          <label>
+            <span>유형</span>
+            <select data-plan-field="type">
+              ${["발주량 확대", "신규 품목 제안", "단가 재협상", "신규 거래처 발굴", "마진 개선"].map((t) => `<option value="${t}">${t}</option>`).join("")}
+            </select>
+          </label>
+          <label><span>담당</span><input data-plan-field="owner" type="text" placeholder="예: 영업1팀" /></label>
+          <label><span>기한</span><input data-plan-field="due" type="date" value="${getDefaultDueDate()}" /></label>
+          <label><span>기대 매출</span><input data-plan-field="expectedSales" type="number" min="0" step="100000" value="0" /></label>
+          <label><span>기대 이익</span><input data-plan-field="expectedProfit" type="number" min="0" step="10000" value="0" /></label>
+          <button class="primary-button" type="submit">+ 계획 추가</button>
+        </form>
+      </td>
+    </tr>
+  `;
+}
+
+function bindAllocationRowEvents() {
   document.querySelectorAll("[data-delete-allocation]").forEach((button) => {
     button.addEventListener("click", () => deleteAllocation(button.dataset.deleteAllocation));
   });
   document.querySelectorAll("[data-edit-allocation]").forEach((button) => {
     button.addEventListener("click", () => editAllocation(button.dataset.editAllocation));
   });
+  document.querySelectorAll("[data-expand-allocation]").forEach((button) => {
+    button.addEventListener("click", () => toggleAllocationExpand(button.dataset.expandAllocation));
+  });
+  document.querySelectorAll("[data-plan-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addAllocationPlan(form.dataset.planForm, form);
+    });
+  });
+  document.querySelectorAll("[data-plan-status]").forEach((select) => {
+    select.addEventListener("change", () => updateActionStatus(select.dataset.planStatus, select.value));
+  });
+  document.querySelectorAll("[data-plan-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteAction(button.dataset.planDelete));
+  });
+}
+
+function toggleAllocationExpand(id) {
+  expandedAllocationId = expandedAllocationId === id ? null : id;
+  renderAllocations(getGoal());
+}
+
+function addAllocationPlan(allocationId, form) {
+  const goal = getGoal();
+  const allocation = goal.allocations.find((item) => item.id === allocationId);
+  if (!allocation) return;
+  const field = (name) => form.querySelector(`[data-plan-field="${name}"]`);
+  const type = field("type").value;
+  const owner = field("owner").value.trim();
+  const due = field("due").value || getDefaultDueDate();
+  const expectedSales = Number(field("expectedSales").value) || 0;
+  const expectedProfit = Number(field("expectedProfit").value) || 0;
+
+  state.actions.push(
+    normalizeAction({
+      id: cryptoId(),
+      title: `${allocation.account} ${type}`,
+      account: allocation.account,
+      type,
+      owner,
+      due,
+      expectedSales,
+      expectedProfit,
+      status: "예정",
+      quarterKey: getSelectedKey(),
+    }),
+  );
+
+  expandedAllocationId = allocationId;
+  saveState();
+  renderAll();
+  showToast(`'${allocation.account}' 실행계획을 추가했습니다. 이름·세부 수정은 실행계획 메뉴에서 가능합니다.`, "success");
 }
 
 function renderManagerGoalSummary(goal) {
