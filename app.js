@@ -106,6 +106,19 @@ const el = {
   allocationCancelButton: document.querySelector("#allocationCancelButton"),
   allocationRows: document.querySelector("#allocationRows"),
   managerGoalRows: document.querySelector("#managerGoalRows"),
+  extraGoalForm: document.querySelector("#extraGoalForm"),
+  extraGoalEditIdInput: document.querySelector("#extraGoalEditIdInput"),
+  extraGoalCategoryInput: document.querySelector("#extraGoalCategoryInput"),
+  extraGoalTitleInput: document.querySelector("#extraGoalTitleInput"),
+  extraGoalTargetInput: document.querySelector("#extraGoalTargetInput"),
+  extraGoalActualInput: document.querySelector("#extraGoalActualInput"),
+  extraGoalUnitInput: document.querySelector("#extraGoalUnitInput"),
+  extraGoalOwnerInput: document.querySelector("#extraGoalOwnerInput"),
+  extraGoalPlanInput: document.querySelector("#extraGoalPlanInput"),
+  extraGoalStatusInput: document.querySelector("#extraGoalStatusInput"),
+  extraGoalSubmitButton: document.querySelector("#extraGoalSubmitButton"),
+  extraGoalCancelButton: document.querySelector("#extraGoalCancelButton"),
+  extraGoalRows: document.querySelector("#extraGoalRows"),
   actionForm: document.querySelector("#actionForm"),
   actionTitleInput: document.querySelector("#actionTitleInput"),
   actionAccountInput: document.querySelector("#actionAccountInput"),
@@ -257,6 +270,7 @@ function renderSortedTable(table) {
     excelResult: renderExcelAnalysis,
     allocation: renderGoals,
     managerGoal: renderGoals,
+    extraGoals: renderGoals,
     actions: renderActions,
     accounts: renderAccounts,
     managerSales: renderAccounts,
@@ -340,6 +354,7 @@ function createDefaultState() {
           { id: cryptoId(), account: "태성FS", sales: 270000000, profit: 32000000 },
           { id: cryptoId(), account: "그린유통", sales: 210000000, profit: 27000000 },
         ],
+        extraGoals: [],
       },
     },
     actions: [
@@ -562,6 +577,21 @@ function normalizeAction(action) {
   };
 }
 
+function normalizeExtraGoal(goal) {
+  if (!goal || !goal.title) return null;
+  return {
+    id: goal.id || cryptoId(),
+    category: goal.category || "기타",
+    title: String(goal.title).trim(),
+    target: Number(goal.target) || 0,
+    actual: Number(goal.actual) || 0,
+    unit: getCellText(goal.unit) || "건",
+    owner: getCellText(goal.owner),
+    plan: getCellText(goal.plan),
+    status: goal.status || "예정",
+  };
+}
+
 function saveState(options = {}) {
   syncAllGoalTargets();
   state.version = "1.1";
@@ -652,6 +682,36 @@ function bindForms() {
 
   el.allocationCancelButton.addEventListener("click", resetAllocationForm);
 
+  if (el.extraGoalForm) {
+    el.extraGoalForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const goal = getGoal();
+      const editId = el.extraGoalEditIdInput.value;
+      const payload = normalizeExtraGoal({
+        id: editId || cryptoId(),
+        category: el.extraGoalCategoryInput.value,
+        title: el.extraGoalTitleInput.value.trim(),
+        target: Number(el.extraGoalTargetInput.value),
+        actual: Number(el.extraGoalActualInput.value),
+        unit: el.extraGoalUnitInput.value.trim(),
+        owner: el.extraGoalOwnerInput.value.trim(),
+        plan: el.extraGoalPlanInput.value.trim(),
+        status: el.extraGoalStatusInput.value,
+      });
+      if (!payload) return;
+      const existing = editId ? goal.extraGoals.find((item) => item.id === editId) : null;
+      if (existing) {
+        Object.assign(existing, payload);
+      } else {
+        goal.extraGoals.push(payload);
+      }
+      resetExtraGoalForm();
+      saveState();
+      renderAll();
+    });
+    el.extraGoalCancelButton.addEventListener("click", resetExtraGoalForm);
+  }
+
   el.actionForm.addEventListener("submit", (event) => {
     event.preventDefault();
     state.actions.push({
@@ -724,8 +784,10 @@ function getSelectedKey() {
 function ensureGoal() {
   const key = getSelectedKey();
   if (!state.goals[key]) {
-    state.goals[key] = { sales: 0, profit: 0, margin: 0, allocations: [] };
+    state.goals[key] = { sales: 0, profit: 0, margin: 0, allocations: [], extraGoals: [] };
   }
+  state.goals[key].allocations = Array.isArray(state.goals[key].allocations) ? state.goals[key].allocations : [];
+  state.goals[key].extraGoals = Array.isArray(state.goals[key].extraGoals) ? state.goals[key].extraGoals.map(normalizeExtraGoal).filter(Boolean) : [];
 }
 
 function getGoal() {
@@ -746,6 +808,8 @@ function getGoalTargets(goal = getGoal()) {
 }
 
 function syncGoalTargets(goal = getGoal()) {
+  goal.allocations = Array.isArray(goal.allocations) ? goal.allocations : [];
+  goal.extraGoals = Array.isArray(goal.extraGoals) ? goal.extraGoals.map(normalizeExtraGoal).filter(Boolean) : [];
   const target = getGoalTargets(goal);
   goal.sales = target.sales;
   goal.profit = target.profit;
@@ -1929,6 +1993,7 @@ function renderGoals() {
 
   renderAllocations(goal);
   renderManagerGoalSummary(goal);
+  renderExtraGoals(goal);
 }
 
 function renderAllocations(goal) {
@@ -2022,6 +2087,111 @@ function renderManagerGoalSummary(goal) {
         )
         .join("")
     : `<tr><td colspan="7">${emptyState("담당자별 목표 또는 실적이 없습니다.")}</td></tr>`;
+}
+
+function renderExtraGoals(goal) {
+  if (!el.extraGoalRows) return;
+  const editingId = el.extraGoalEditIdInput.value;
+  const rows = sortTableRows(goal.extraGoals || [], "extraGoals", {
+    category: (row) => row.category,
+    title: (row) => row.title,
+    target: (row) => row.target,
+    actual: (row) => row.actual,
+    rate: (row) => rate(row.actual, row.target),
+    unit: (row) => row.unit,
+    owner: (row) => row.owner,
+    plan: (row) => row.plan,
+    status: (row) => row.status,
+  }, (a, b) => a.category.localeCompare(b.category, "ko") || a.title.localeCompare(b.title, "ko"));
+
+  el.extraGoalRows.innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.category)}</td>
+              <td><strong>${escapeHtml(row.title)}</strong></td>
+              <td class="num">${formatNumber(row.target)}</td>
+              <td class="num">${formatNumber(row.actual)}</td>
+              <td class="num">${rate(row.actual, row.target).toFixed(1)}%</td>
+              <td>${escapeHtml(row.unit || "-")}</td>
+              <td>${escapeHtml(row.owner || "-")}</td>
+              <td>${escapeHtml(row.plan || "-")}</td>
+              <td>
+                <select class="status-select" data-extra-goal-status="${row.id}">
+                  ${["예정", "진행중", "완료", "보류"].map((status) => `<option value="${status}" ${status === row.status ? "selected" : ""}>${status}</option>`).join("")}
+                </select>
+              </td>
+              <td>
+                <div class="table-actions">
+                  <button class="secondary-button" type="button" data-edit-extra-goal="${row.id}">${editingId === row.id ? "수정중" : "수정"}</button>
+                  <button class="danger-button" type="button" data-delete-extra-goal="${row.id}">삭제</button>
+                </div>
+              </td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `<tr><td colspan="10">${emptyState("등록된 부가 목표가 없습니다.")}</td></tr>`;
+
+  document.querySelectorAll("[data-extra-goal-status]").forEach((select) => {
+    select.addEventListener("change", () => updateExtraGoalStatus(select.dataset.extraGoalStatus, select.value));
+  });
+  document.querySelectorAll("[data-edit-extra-goal]").forEach((button) => {
+    button.addEventListener("click", () => editExtraGoal(button.dataset.editExtraGoal));
+  });
+  document.querySelectorAll("[data-delete-extra-goal]").forEach((button) => {
+    button.addEventListener("click", () => deleteExtraGoal(button.dataset.deleteExtraGoal));
+  });
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+}
+
+function editExtraGoal(id) {
+  const goal = getGoal();
+  const item = (goal.extraGoals || []).find((row) => row.id === id);
+  if (!item) return;
+  el.extraGoalEditIdInput.value = item.id;
+  el.extraGoalCategoryInput.value = item.category;
+  el.extraGoalTitleInput.value = item.title;
+  el.extraGoalTargetInput.value = item.target;
+  el.extraGoalActualInput.value = item.actual;
+  el.extraGoalUnitInput.value = item.unit;
+  el.extraGoalOwnerInput.value = item.owner;
+  el.extraGoalPlanInput.value = item.plan;
+  el.extraGoalStatusInput.value = item.status;
+  el.extraGoalSubmitButton.textContent = "수정 저장";
+  el.extraGoalCancelButton.hidden = false;
+  renderExtraGoals(goal);
+  el.extraGoalTitleInput.focus();
+}
+
+function resetExtraGoalForm() {
+  if (!el.extraGoalForm) return;
+  el.extraGoalForm.reset();
+  el.extraGoalEditIdInput.value = "";
+  el.extraGoalActualInput.value = "0";
+  el.extraGoalSubmitButton.textContent = "목표 추가";
+  el.extraGoalCancelButton.hidden = true;
+}
+
+function updateExtraGoalStatus(id, status) {
+  const item = (getGoal().extraGoals || []).find((row) => row.id === id);
+  if (!item) return;
+  item.status = status;
+  saveState();
+  renderAll();
+}
+
+function deleteExtraGoal(id) {
+  if (!confirm("이 부가 목표를 삭제할까요?")) return;
+  const goal = getGoal();
+  goal.extraGoals = (goal.extraGoals || []).filter((row) => row.id !== id);
+  if (el.extraGoalEditIdInput.value === id) resetExtraGoalForm();
+  saveState();
+  renderAll();
 }
 
 function editAllocation(id) {
@@ -2530,6 +2700,7 @@ function mergeGoalsForSync(serverGoals = {}, localGoals = {}) {
       ...serverGoal,
       ...localGoal,
       allocations: mergeById(serverGoal.allocations || [], localGoal.allocations || []),
+      extraGoals: mergeById(serverGoal.extraGoals || [], localGoal.extraGoals || []),
     };
   });
   Object.values(result).forEach((goal) => syncGoalTargets(goal));
