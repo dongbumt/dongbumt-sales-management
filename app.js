@@ -722,12 +722,14 @@ function bindForms() {
       sales: Number(el.allocationSalesInput.value),
       profit: Number(el.allocationProfitInput.value),
     };
-    const existing = editId ? goal.allocations.find((allocation) => allocation.id === editId) : null;
+    goal.allocations = dedupeGoalAllocations(goal.allocations);
+    const existing = findAllocationForSave(goal, editId, payload.account);
     if (existing) {
       Object.assign(existing, payload);
     } else {
       goal.allocations.push({ id: cryptoId(), ...payload });
     }
+    goal.allocations = dedupeGoalAllocations(goal.allocations);
     addAllocationPlanFromInputs(payload.account);
     syncGoalTargets(goal);
     resetAllocationForm();
@@ -870,13 +872,50 @@ function getGoalTargets(goal = getGoal()) {
 }
 
 function syncGoalTargets(goal = getGoal()) {
-  goal.allocations = Array.isArray(goal.allocations) ? goal.allocations : [];
+  goal.allocations = dedupeGoalAllocations(goal.allocations);
   goal.extraGoals = Array.isArray(goal.extraGoals) ? goal.extraGoals.map(normalizeExtraGoal).filter(Boolean) : [];
   const target = getGoalTargets(goal);
   goal.sales = target.sales;
   goal.profit = target.profit;
   goal.margin = target.margin;
   return target;
+}
+
+function normalizeAllocation(allocation) {
+  if (!allocation || !allocation.account) return null;
+  return {
+    id: String(allocation.id || cryptoId()),
+    account: String(allocation.account).trim(),
+    sales: Number(allocation.sales) || 0,
+    profit: Number(allocation.profit) || 0,
+  };
+}
+
+function dedupeGoalAllocations(allocations = []) {
+  const order = [];
+  const map = new Map();
+  (Array.isArray(allocations) ? allocations : [])
+    .map(normalizeAllocation)
+    .filter(Boolean)
+    .forEach((allocation) => {
+      const key = normalizeAccountKey(allocation.account) || allocation.id;
+      const existing = map.get(key);
+      if (!existing) order.push(key);
+      map.set(key, { ...allocation, id: existing?.id || allocation.id });
+    });
+  return order.map((key) => map.get(key));
+}
+
+function findAllocationForSave(goal, editId, account) {
+  const textId = String(editId || "");
+  if (textId) {
+    const byId = goal.allocations.find((allocation) => String(allocation.id) === textId);
+    if (byId) return byId;
+  }
+
+  const key = normalizeAccountKey(account);
+  if (!key) return null;
+  return goal.allocations.find((allocation) => normalizeAccountKey(allocation.account) === key) || null;
 }
 
 function syncAllGoalTargets() {
@@ -2111,7 +2150,7 @@ function renderAllocations(goal) {
               <td class="num">${planCell}</td>
               <td>
                 <div class="table-actions">
-                  <button class="secondary-button" type="button" data-edit-allocation="${allocation.id}">${editingId === allocation.id ? "수정중" : "수정"}</button>
+                  <button class="secondary-button" type="button" data-edit-allocation="${allocation.id}">${editingId === String(allocation.id) ? "수정중" : "수정"}</button>
                   <button class="danger-button" type="button" data-delete-allocation="${allocation.id}">삭제</button>
                 </div>
               </td>
@@ -2356,9 +2395,9 @@ function deleteExtraGoal(id) {
 
 function editAllocation(id) {
   const goal = getGoal();
-  const allocation = goal.allocations.find((item) => item.id === id);
+  const allocation = goal.allocations.find((item) => String(item.id) === String(id));
   if (!allocation) return;
-  el.allocationEditIdInput.value = allocation.id;
+  el.allocationEditIdInput.value = String(allocation.id);
   el.allocationAccountInput.value = allocation.account;
   el.allocationSalesInput.value = allocation.sales;
   el.allocationProfitInput.value = allocation.profit;
@@ -2382,8 +2421,8 @@ function deleteAllocation(id) {
   if (!confirm("이 목표 배분을 삭제할까요?")) return;
   const goal = getGoal();
   rememberDeletedId("allocations", id);
-  goal.allocations = goal.allocations.filter((allocation) => allocation.id !== id);
-  if (el.allocationEditIdInput.value === id) resetAllocationForm();
+  goal.allocations = goal.allocations.filter((allocation) => String(allocation.id) !== String(id));
+  if (el.allocationEditIdInput.value === String(id)) resetAllocationForm();
   syncGoalTargets(goal);
   saveState();
   renderAll();
