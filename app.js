@@ -105,6 +105,7 @@ const el = {
   allocationSubmitButton: document.querySelector("#allocationSubmitButton"),
   allocationCancelButton: document.querySelector("#allocationCancelButton"),
   allocationRows: document.querySelector("#allocationRows"),
+  managerGoalRows: document.querySelector("#managerGoalRows"),
   actionForm: document.querySelector("#actionForm"),
   actionTitleInput: document.querySelector("#actionTitleInput"),
   actionAccountInput: document.querySelector("#actionAccountInput"),
@@ -122,6 +123,7 @@ const el = {
   accountTrendChart: document.querySelector("#accountTrendChart"),
   accountAnalysisSummary: document.querySelector("#accountAnalysisSummary"),
   accountRows: document.querySelector("#accountRows"),
+  managerSalesRows: document.querySelector("#managerSalesRows"),
   itemMonthInput: document.querySelector("#itemMonthInput"),
   itemAccountFilter: document.querySelector("#itemAccountFilter"),
   cleanOrphanItemsButton: document.querySelector("#cleanOrphanItemsButton"),
@@ -130,6 +132,7 @@ const el = {
   itemAnalysisRows: document.querySelector("#itemAnalysisRows"),
   accountForm: document.querySelector("#accountForm"),
   accountNameInput: document.querySelector("#accountNameInput"),
+  accountOwnerInput: document.querySelector("#accountOwnerInput"),
   accountAliasInput: document.querySelector("#accountAliasInput"),
   accountMasterSummary: document.querySelector("#accountMasterSummary"),
   accountMasterNote: document.querySelector("#accountMasterNote"),
@@ -253,8 +256,10 @@ function renderSortedTable(table) {
     monthly: renderMonthly,
     excelResult: renderExcelAnalysis,
     allocation: renderGoals,
+    managerGoal: renderGoals,
     actions: renderActions,
     accounts: renderAccounts,
+    managerSales: renderAccounts,
     accountMaster: renderAccountMaster,
     itemAnalysis: renderItemAnalysis,
   };
@@ -486,7 +491,7 @@ function deriveAccountsFromData(s) {
   (s.itemRecords || []).forEach((r) => r.account && names.add(String(r.account).trim()));
   Object.values(s.goals || {}).forEach((goal) => (goal.allocations || []).forEach((a) => a.account && names.add(String(a.account).trim())));
   (s.actions || []).forEach((a) => a.account && names.add(String(a.account).trim()));
-  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")).map((name) => ({ id: cryptoId(), name, aliases: [] }));
+  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")).map((name) => ({ id: cryptoId(), name, owner: "", aliases: [] }));
 }
 
 function normalizeAccount(account) {
@@ -495,6 +500,7 @@ function normalizeAccount(account) {
   return {
     id: account.id || cryptoId(),
     name: String(account.name).trim(),
+    owner: getCellText(account.owner || account.manager),
     aliases,
   };
 }
@@ -803,6 +809,40 @@ function getTotals(records = getQuarterRecords()) {
   const profit = sales - cost;
   const margin = sales > 0 ? (profit / sales) * 100 : 0;
   return { sales, cost, profit, margin };
+}
+
+function getAccountOwner(accountName) {
+  const resolved = resolveAccountName(accountName);
+  return resolved.account?.owner || "미지정";
+}
+
+function createManagerBucket(owner) {
+  return {
+    owner: owner || "미지정",
+    accountCount: 0,
+    accountSet: new Set(),
+    sales: 0,
+    cost: 0,
+    profit: 0,
+    margin: 0,
+    salesTarget: 0,
+    profitTarget: 0,
+  };
+}
+
+function groupRecordsByManager(records) {
+  return records.reduce((map, record) => {
+    const owner = getAccountOwner(record.account);
+    if (!map[owner]) map[owner] = createManagerBucket(owner);
+    const row = map[owner];
+    row.sales += Number(record.sales) || 0;
+    row.cost += Number(record.cost) || 0;
+    row.profit += (Number(record.sales) || 0) - (Number(record.cost) || 0);
+    row.accountSet.add(resolveAccountName(record.account).name || record.account);
+    row.accountCount = row.accountSet.size;
+    row.margin = margin(row.sales, row.profit);
+    return map;
+  }, {});
 }
 
 function renderDashboard() {
@@ -1888,6 +1928,7 @@ function renderGoals() {
     .join("");
 
   renderAllocations(goal);
+  renderManagerGoalSummary(goal);
 }
 
 function renderAllocations(goal) {
@@ -1932,6 +1973,55 @@ function renderAllocations(goal) {
   document.querySelectorAll("[data-edit-allocation]").forEach((button) => {
     button.addEventListener("click", () => editAllocation(button.dataset.editAllocation));
   });
+}
+
+function renderManagerGoalSummary(goal) {
+  if (!el.managerGoalRows) return;
+  const accountData = groupByAccount(getQuarterRecords());
+  const managerMap = {};
+
+  (goal.allocations || []).forEach((allocation) => {
+    const owner = getAccountOwner(allocation.account);
+    if (!managerMap[owner]) managerMap[owner] = createManagerBucket(owner);
+    managerMap[owner].salesTarget += Number(allocation.sales) || 0;
+    managerMap[owner].profitTarget += Number(allocation.profit) || 0;
+  });
+
+  Object.entries(accountData).forEach(([account, actual]) => {
+    const owner = getAccountOwner(account);
+    if (!managerMap[owner]) managerMap[owner] = createManagerBucket(owner);
+    managerMap[owner].sales += Number(actual.sales) || 0;
+    managerMap[owner].profit += Number(actual.profit) || 0;
+    managerMap[owner].margin = margin(managerMap[owner].sales, managerMap[owner].profit);
+  });
+
+  const rows = sortTableRows(Object.values(managerMap), "managerGoal", {
+    owner: (row) => row.owner,
+    salesTarget: (row) => row.salesTarget,
+    actualSales: (row) => row.sales,
+    salesRate: (row) => rate(row.sales, row.salesTarget),
+    profitTarget: (row) => row.profitTarget,
+    actualProfit: (row) => row.profit,
+    profitRate: (row) => rate(row.profit, row.profitTarget),
+  }, (a, b) => b.salesTarget - a.salesTarget || b.sales - a.sales || a.owner.localeCompare(b.owner, "ko"));
+
+  el.managerGoalRows.innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.owner)}</td>
+              <td class="num">${won(row.salesTarget)}</td>
+              <td class="num">${won(row.sales)}</td>
+              <td class="num">${rate(row.sales, row.salesTarget).toFixed(1)}%</td>
+              <td class="num">${won(row.profitTarget)}</td>
+              <td class="num">${won(row.profit)}</td>
+              <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `<tr><td colspan="7">${emptyState("담당자별 목표 또는 실적이 없습니다.")}</td></tr>`;
 }
 
 function editAllocation(id) {
@@ -2045,6 +2135,7 @@ function renderAccounts() {
   const totals = getTotals(records);
   const rows = sortTableRows(Object.values(groupByAccount(records)), "accounts", {
     account: (row) => row.account,
+    owner: (row) => getAccountOwner(row.account),
     sales: (row) => row.sales,
     profit: (row) => row.profit,
     margin: (row) => row.margin,
@@ -2059,6 +2150,7 @@ function renderAccounts() {
   el.accountChartAccountSelect.innerHTML = ["전체", ...accounts].map((account) => `<option value="${escapeAttr(account)}">${escapeHtml(account)}</option>`).join("");
   el.accountChartAccountSelect.value = selectedAccount;
   renderAccountTrendChart(records, selectedAccount, monthKeys, label);
+  renderManagerSalesSummary(records, totals);
 
   el.accountAnalysisSummary.innerHTML = rows.length
     ? `<p>${label} 기준 거래처 ${rows.length.toLocaleString("ko-KR")}곳 · 매출 ${won(totals.sales)} · 이익 ${won(totals.profit)} · 마진 ${totals.margin.toFixed(1)}%</p>`
@@ -2071,6 +2163,7 @@ function renderAccounts() {
           return `
             <tr>
               <td>${escapeHtml(row.account)}</td>
+              <td>${escapeHtml(getAccountOwner(row.account))}</td>
               <td class="num">${won(row.sales)}</td>
               <td class="num">${won(row.profit)}</td>
               <td class="num">${row.margin.toFixed(1)}%</td>
@@ -2081,7 +2174,37 @@ function renderAccounts() {
           `;
         })
         .join("")
-    : `<tr><td colspan="7">${emptyState("분석할 실적이 없습니다.")}</td></tr>`;
+    : `<tr><td colspan="8">${emptyState("분석할 실적이 없습니다.")}</td></tr>`;
+}
+
+function renderManagerSalesSummary(records, totals) {
+  if (!el.managerSalesRows) return;
+  const rows = sortTableRows(Object.values(groupRecordsByManager(records)), "managerSales", {
+    owner: (row) => row.owner,
+    accountCount: (row) => row.accountCount,
+    sales: (row) => row.sales,
+    profit: (row) => row.profit,
+    margin: (row) => row.margin,
+    mix: (row) => rate(row.sales, totals.sales),
+  }, (a, b) => b.sales - a.sales || a.owner.localeCompare(b.owner, "ko"));
+
+  el.managerSalesRows.innerHTML = rows.length
+    ? rows
+        .map((row) => {
+          const mix = rate(row.sales, totals.sales);
+          return `
+            <tr>
+              <td>${escapeHtml(row.owner)}</td>
+              <td class="num">${row.accountCount.toLocaleString("ko-KR")}</td>
+              <td class="num">${won(row.sales)}</td>
+              <td class="num">${won(row.profit)}</td>
+              <td class="num">${row.margin.toFixed(1)}%</td>
+              <td class="num">${mix.toFixed(1)}%</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : `<tr><td colspan="6">${emptyState("담당자별로 집계할 실적이 없습니다.")}</td></tr>`;
 }
 
 function renderAccountTrendChart(records, selectedAccount, monthKeys, label) {
@@ -2390,7 +2513,7 @@ function mergeAccountsForSync(serverAccounts = [], localAccounts = []) {
       return;
     }
     const aliases = new Set([...(existing.aliases || []), ...(account.aliases || [])]);
-    map.set(key, { ...existing, ...account, aliases: [...aliases] });
+    map.set(key, { ...existing, ...account, owner: account.owner || existing.owner || "", aliases: [...aliases] });
   });
   return [...map.values()];
 }
@@ -2474,7 +2597,7 @@ function ensureAccountFromImport(raw) {
   if (!text) return text;
   const resolved = resolveAccountName(text);
   if (resolved.matched) return resolved.name;
-  state.accounts.push({ id: cryptoId(), name: text, aliases: [] });
+  state.accounts.push({ id: cryptoId(), name: text, owner: "", aliases: [] });
   return text;
 }
 
@@ -2483,16 +2606,18 @@ function bindAccountMaster() {
     event.preventDefault();
     const name = el.accountNameInput.value.trim();
     if (!name) return;
+    const owner = el.accountOwnerInput.value.trim();
     const aliases = el.accountAliasInput.value
       .split(",")
       .map((alias) => alias.trim())
       .filter(Boolean);
     const existing = state.accounts.find((account) => normalizeAccountKey(account.name) === normalizeAccountKey(name));
     if (existing) {
+      if (owner) existing.owner = owner;
       aliases.forEach((alias) => addAliasToAccount(existing, alias));
-      showToast("이미 있는 거래처라 별칭만 추가했습니다.", "success");
+      showToast("이미 있는 거래처라 담당자와 별칭을 반영했습니다.", "success");
     } else {
-      const account = { id: cryptoId(), name, aliases: [] };
+      const account = { id: cryptoId(), name, owner, aliases: [] };
       aliases.forEach((alias) => addAliasToAccount(account, alias));
       state.accounts.push(account);
       showToast("거래처를 추가했습니다.", "success");
@@ -2525,15 +2650,6 @@ function cleanOrphanItemRecords() {
 function addAliasToAccount(account, alias) {
   const text = getCellText(alias);
   if (!text) return;
-  if (normalizeAccountKey(text) === normalizeAccountKey(account.name)) return; // 정식명과 동일하면 무시
-  account.aliases = account.aliases || [];
-  if (account.aliases.some((a) => normalizeAccountKey(a) === normalizeAccountKey(text))) return;
-  account.aliases.push(text);
-}
-
-function addAliasToAccount(account, alias) {
-  const text = getCellText(alias);
-  if (!text) return;
   account.aliases = account.aliases || [];
   if (text === getCellText(account.name)) return;
   if (account.aliases.some((a) => getCellText(a) === text)) return;
@@ -2551,11 +2667,13 @@ function countAccountRecords(account) {
 function renderAccountMaster() {
   const accounts = sortTableRows([...state.accounts], "accountMaster", {
     name: (account) => account.name,
+    owner: (account) => account.owner || "",
     aliases: (account) => (account.aliases || []).join(", "),
     recordCount: (account) => countAccountRecords(account).recordCount,
   }, (a, b) => a.name.localeCompare(b.name, "ko"));
   const aliasTotal = accounts.reduce((total, account) => total + (account.aliases ? account.aliases.length : 0), 0);
-  el.accountMasterSummary.textContent = `거래처 ${accounts.length.toLocaleString("ko-KR")}곳 · 등록 별칭 ${aliasTotal.toLocaleString("ko-KR")}개`;
+  const ownerTotal = new Set(accounts.map((account) => account.owner).filter(Boolean)).size;
+  el.accountMasterSummary.textContent = `거래처 ${accounts.length.toLocaleString("ko-KR")}곳 · 담당자 ${ownerTotal.toLocaleString("ko-KR")}명 · 등록 별칭 ${aliasTotal.toLocaleString("ko-KR")}개`;
   el.accountMasterNote.innerHTML =
     "<p>엑셀을 반영하면 거래처명이 여기 정식명으로 자동 치환됩니다. 표기가 갈라진 거래처는 별칭을 추가하거나 병합으로 하나로 합칠 수 있습니다. 기존 데이터를 마스터에 맞춰 정리하려면 ‘기존 실적 재매칭’을 누르세요.</p>";
 
@@ -2582,6 +2700,10 @@ function renderAccountMaster() {
                 <button class="link-button" type="button" data-edit-account="${account.id}">이름수정</button>
               </td>
               <td>
+                <strong>${escapeHtml(account.owner || "미지정")}</strong>
+                <button class="link-button" type="button" data-edit-owner="${account.id}">담당수정</button>
+              </td>
+              <td>
                 <div class="alias-cell">${aliasChips}</div>
                 <button class="link-button" type="button" data-add-alias="${account.id}">+ 별칭추가</button>
               </td>
@@ -2604,7 +2726,7 @@ function renderAccountMaster() {
           `;
         })
         .join("")
-    : `<tr><td colspan="5">${emptyState("등록된 거래처가 없습니다. 위에서 추가하거나 엑셀을 반영하면 자동 등록됩니다.")}</td></tr>`;
+    : `<tr><td colspan="6">${emptyState("등록된 거래처가 없습니다. 위에서 추가하거나 엑셀을 반영하면 자동 등록됩니다.")}</td></tr>`;
 
   document.querySelectorAll("[data-add-alias]").forEach((button) => {
     button.addEventListener("click", () => promptAddAlias(button.dataset.addAlias));
@@ -2615,6 +2737,9 @@ function renderAccountMaster() {
   document.querySelectorAll("[data-edit-account]").forEach((button) => {
     button.addEventListener("click", () => promptEditAccountName(button.dataset.editAccount));
   });
+  document.querySelectorAll("[data-edit-owner]").forEach((button) => {
+    button.addEventListener("click", () => promptEditAccountOwner(button.dataset.editOwner));
+  });
   document.querySelectorAll("[data-merge-from]").forEach((button) => {
     button.addEventListener("click", () => {
       const select = document.querySelector(`[data-merge-target="${button.dataset.mergeFrom}"]`);
@@ -2624,24 +2749,6 @@ function renderAccountMaster() {
   document.querySelectorAll("[data-delete-account]").forEach((button) => {
     button.addEventListener("click", () => deleteAccountMaster(button.dataset.deleteAccount));
   });
-}
-
-function promptAddAlias(id) {
-  const account = state.accounts.find((a) => a.id === id);
-  if (!account) return;
-  const input = prompt(`'${account.name}'에 추가할 별칭을 입력하세요. (엑셀에 들어오는 다른 표기)`);
-  if (input === null) return;
-  const before = (account.aliases || []).length;
-  input
-    .split(",")
-    .map((alias) => alias.trim())
-    .filter(Boolean)
-    .forEach((alias) => addAliasToAccount(account, alias));
-  if ((account.aliases || []).length > before) {
-    saveState();
-    renderAll();
-    showToast("별칭을 추가했습니다.", "success");
-  }
 }
 
 function promptAddAlias(id) {
@@ -2697,6 +2804,17 @@ function promptEditAccountName(id) {
   showToast("거래처명을 수정했습니다.", "success");
 }
 
+function promptEditAccountOwner(id) {
+  const account = state.accounts.find((a) => a.id === id);
+  if (!account) return;
+  const input = prompt(`'${account.name}' 담당자를 입력하세요. 비워두면 미지정으로 표시됩니다.`, account.owner || "");
+  if (input === null) return;
+  account.owner = input.trim();
+  saveState();
+  renderAll();
+  showToast("담당자를 수정했습니다.", "success");
+}
+
 // fromName(정확히 일치하는 문자열)을 toName으로 일괄 변경
 function repointAccountName(fromName, toName) {
   const fromKey = normalizeAccountKey(fromName);
@@ -2721,6 +2839,7 @@ function mergeAccounts(fromId, toId) {
   if (!confirm(`'${from.name}'을(를) '${to.name}'에 병합할까요?\n'${from.name}'의 모든 실적이 '${to.name}'으로 합쳐지고, '${from.name}'은 별칭으로 남습니다.`)) return;
 
   // from의 이름+별칭을 to의 별칭으로 흡수
+  if (!to.owner && from.owner) to.owner = from.owner;
   addAliasToAccount(to, from.name);
   (from.aliases || []).forEach((alias) => addAliasToAccount(to, alias));
   // from에 연결된 모든 데이터의 거래처명을 to 정식명으로 변경
