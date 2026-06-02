@@ -3342,13 +3342,8 @@ function renderReport() {
   const totals = getTotals(records);
   const accountRows = getAccountReportRows(goal, records);
   const managerRows = getManagerReportRows(accountRows);
-  const accounts = accountRows.filter((row) => row.sales > 0 || row.salesTarget > 0).sort((a, b) => b.sales - a.sales || b.salesTarget - a.salesTarget);
   const actions = getQuarterActions();
   const pending = actions.filter((action) => action.status !== "완료");
-  const salesGap = Math.max(goal.sales - totals.sales, 0);
-  const profitGap = Math.max(goal.profit - totals.profit, 0);
-  const pendingSales = sum(pending, "expectedSales");
-  const pendingProfit = sum(pending, "expectedProfit");
 
   el.reportBody.innerHTML = `
     <section class="report-section">
@@ -3358,15 +3353,6 @@ function renderReport() {
         <article class="report-metric"><span>매출이익</span><strong>${won(totals.profit)}</strong></article>
         <article class="report-metric"><span>마진율</span><strong>${totals.margin.toFixed(1)}%</strong></article>
       </div>
-    </section>
-    <section class="report-section">
-      <h3>목표 대비</h3>
-      <p>매출 목표 ${won(goal.sales)} 중 ${rate(totals.sales, goal.sales).toFixed(1)}% 달성, 매출이익 목표 ${won(goal.profit)} 중 ${rate(totals.profit, goal.profit).toFixed(1)}% 달성.</p>
-      <p>현재 부족분은 매출 ${won(salesGap)}, 매출이익 ${won(profitGap)}이며 미완료 실행계획의 기대효과는 매출 ${won(pendingSales)}, 이익 ${won(pendingProfit)}입니다.</p>
-    </section>
-    <section class="report-section">
-      <h3>주요 거래처</h3>
-      ${accounts.length ? `<ol>${accounts.slice(0, 5).map((row) => `<li>${escapeHtml(row.account)}: 매출 ${won(row.sales)}, 이익 ${won(row.profit)}, 마진 ${row.margin.toFixed(1)}%</li>`).join("")}</ol>` : "<p>등록된 실적이 없습니다.</p>"}
     </section>
     <section class="report-section">
       <h3>담당자별 보고서</h3>

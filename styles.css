@@ -1157,19 +1157,19 @@ td {
   }
 
   .report-panel .panel-header {
-    margin-bottom: 5px;
+    margin-bottom: 8px;
   }
 
   .report-panel .panel-header h2 {
-    font-size: 14px;
-    line-height: 1.1;
+    font-size: 16px;
+    line-height: 1.2;
   }
 
   .report-panel .panel-header p,
   .report-section p,
   .report-section li {
-    font-size: 8px;
-    line-height: 1.25;
+    font-size: 10px;
+    line-height: 1.35;
   }
 
   .report-body {
@@ -1179,14 +1179,14 @@ td {
   .report-section {
     break-inside: avoid;
     page-break-inside: avoid;
-    padding-top: 4px;
-    margin-top: 4px;
+    padding-top: 8px;
+    margin-top: 8px;
   }
 
   .report-section h3 {
-    margin-bottom: 3px;
-    font-size: 10px;
-    line-height: 1.15;
+    margin-bottom: 6px;
+    font-size: 12px;
+    line-height: 1.25;
   }
 
   .report-section ol {
@@ -1195,39 +1195,39 @@ td {
   }
 
   .report-metrics {
-    gap: 4px;
+    gap: 8px;
   }
 
   .report-metric {
-    padding: 4px 6px;
+    padding: 7px 9px;
   }
 
   .report-metric span {
-    font-size: 7px;
+    font-size: 9px;
   }
 
   .report-metric strong {
-    margin-top: 2px;
-    font-size: 12px;
+    margin-top: 4px;
+    font-size: 15px;
   }
 
   .company-report-group {
-    margin-top: 5px;
+    margin-top: 9px;
   }
 
   .company-report-group h4 {
-    margin-bottom: 3px;
-    font-size: 9px;
-    line-height: 1.15;
+    margin-bottom: 5px;
+    font-size: 11px;
+    line-height: 1.25;
   }
 
   .company-report-group h4 span {
-    margin-left: 4px;
-    font-size: 7px;
+    margin-left: 6px;
+    font-size: 9px;
   }
 
   .report-table-wrap {
-    margin-top: 2px;
+    margin-top: 4px;
     overflow: visible;
   }
 
@@ -1237,9 +1237,9 @@ td {
 
   .report-table-wrap th,
   .report-table-wrap td {
-    padding: 2px 3px;
-    font-size: 7px;
-    line-height: 1.15;
+    padding: 4px 5px;
+    font-size: 8.5px;
+    line-height: 1.3;
   }
 }
 
