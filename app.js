@@ -1005,6 +1005,11 @@ function getAccountOwner(accountName) {
   return resolved.account?.owner || "미지정";
 }
 
+function getAccountCompany(accountName) {
+  const resolved = resolveAccountName(accountName);
+  return normalizeAccountCompany(resolved.account?.company);
+}
+
 function createManagerBucket(owner) {
   return {
     owner: owner || "미지정",
@@ -3387,6 +3392,7 @@ function getAccountReportRows(goal, records) {
       rowMap.set(key, {
         account,
         owner: getAccountOwner(account),
+        company: getAccountCompany(account),
         salesTarget: 0,
         profitTarget: 0,
         sales: 0,
@@ -3405,6 +3411,7 @@ function getAccountReportRows(goal, records) {
     if (!row) return;
     row.account = allocation.account;
     row.owner = getAccountOwner(allocation.account);
+    row.company = getAccountCompany(allocation.account);
     row.salesTarget += Number(allocation.sales) || 0;
     row.profitTarget += Number(allocation.profit) || 0;
   });
@@ -3422,6 +3429,7 @@ function getAccountReportRows(goal, records) {
     row.pendingPlanCount = pendingPlans.length;
     row.pendingExpectedSales = sum(pendingPlans, "expectedSales");
     row.pendingExpectedProfit = sum(pendingPlans, "expectedProfit");
+    row.company = row.company || getAccountCompany(row.account);
   });
 
   return [...rowMap.values()].sort((a, b) => b.salesTarget - a.salesTarget || b.sales - a.sales || a.account.localeCompare(b.account, "ko"));
@@ -3487,6 +3495,41 @@ function renderManagerReportTable(rows) {
 
 function renderAccountReportTable(rows) {
   if (!rows.length) return "<p>거래처별로 집계할 목표 또는 실적이 없습니다.</p>";
+  return groupAccountReportRowsByCompany(rows)
+    .map(
+      ({ company, rows: companyRows, totals }) => `
+        <div class="company-report-group">
+          <h4>${escapeHtml(company)} <span>${companyRows.length.toLocaleString("ko-KR")}곳 · 매출 ${won(totals.sales)} / 목표 ${won(totals.salesTarget)} · 이익 ${won(totals.profit)} / 목표 ${won(totals.profitTarget)}</span></h4>
+          ${renderAccountReportRowsTable(companyRows)}
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function groupAccountReportRowsByCompany(rows) {
+  const order = [...ACCOUNT_COMPANIES, "미지정"];
+  const map = new Map(order.map((company) => [company, []]));
+  rows.forEach((row) => {
+    const company = normalizeAccountCompany(row.company) || "미지정";
+    if (!map.has(company)) map.set(company, []);
+    map.get(company).push(row);
+  });
+  return [...map.entries()]
+    .filter(([, companyRows]) => companyRows.length)
+    .map(([company, companyRows]) => ({
+      company,
+      rows: companyRows.sort((a, b) => b.salesTarget - a.salesTarget || b.sales - a.sales || a.account.localeCompare(b.account, "ko")),
+      totals: {
+        salesTarget: sum(companyRows, "salesTarget"),
+        profitTarget: sum(companyRows, "profitTarget"),
+        sales: sum(companyRows, "sales"),
+        profit: sum(companyRows, "profit"),
+      },
+    }));
+}
+
+function renderAccountReportRowsTable(rows) {
   return `
     <div class="table-wrap report-table-wrap">
       <table>

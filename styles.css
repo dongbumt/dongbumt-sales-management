@@ -987,6 +987,27 @@ td {
   width: 90px;
 }
 
+.company-report-group {
+  margin-top: 16px;
+}
+
+.company-report-group:first-child {
+  margin-top: 8px;
+}
+
+.company-report-group h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.company-report-group h4 span {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .empty-state {
   padding: 20px;
   border: 1px dashed var(--line);
