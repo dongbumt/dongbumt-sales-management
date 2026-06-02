@@ -220,7 +220,8 @@ function init() {
   });
   el.itemAccountFilter.addEventListener("change", renderItemAnalysis);
   if (el.statusFilter) el.statusFilter.addEventListener("change", renderActions);
-  el.printButton.addEventListener("click", () => window.print());
+  el.printButton.addEventListener("click", printReportOnePage);
+  window.addEventListener("afterprint", resetReportPrintScale);
   el.excelFileInput.addEventListener("change", handleExcelFile);
   el.analyzeExcelButton.addEventListener("click", analyzeExcelRows);
   el.importExcelResultButton.addEventListener("click", importExcelAnalysis);
@@ -3380,6 +3381,33 @@ function renderReport() {
       ${pending.length ? `<ol>${pending.slice(0, 5).map((action) => `<li>${escapeHtml(action.title)} · ${escapeHtml(action.account)} · ${action.due} · ${action.status}</li>`).join("")}</ol>` : "<p>미완료 실행계획이 없습니다.</p>"}
     </section>
   `;
+}
+
+function printReportOnePage() {
+  prepareReportPrintScale();
+  setTimeout(() => window.print(), 40);
+}
+
+function prepareReportPrintScale() {
+  const panel = document.querySelector(".report-panel");
+  if (!panel) return 1;
+
+  document.body.classList.add("print-one-page");
+  document.documentElement.style.setProperty("--print-scale", "1");
+
+  // A4 landscape printable area with 7mm margins, converted to CSS pixels.
+  const pageWidth = 1069;
+  const pageHeight = 740;
+  const widthScale = pageWidth / Math.max(panel.scrollWidth, 1);
+  const heightScale = pageHeight / Math.max(panel.scrollHeight, 1);
+  const scale = Math.min(1, widthScale, heightScale);
+  document.documentElement.style.setProperty("--print-scale", scale.toFixed(3));
+  return scale;
+}
+
+function resetReportPrintScale() {
+  document.body.classList.remove("print-one-page");
+  document.documentElement.style.removeProperty("--print-scale");
 }
 
 function getAccountReportRows(goal, records) {
