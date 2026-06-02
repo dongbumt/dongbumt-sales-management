@@ -960,6 +960,23 @@ td {
   font-size: 19px;
 }
 
+.report-table-wrap {
+  margin-top: 10px;
+}
+
+.report-table-wrap table {
+  min-width: 1180px;
+}
+
+.report-table-wrap th,
+.report-table-wrap td {
+  font-size: 12px;
+}
+
+.report-table-wrap td:last-child {
+  min-width: 120px;
+}
+
 .empty-state {
   padding: 20px;
   border: 1px dashed var(--line);

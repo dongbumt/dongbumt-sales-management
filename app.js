@@ -3287,8 +3287,11 @@ function recanonicalizeAll() {
 
 function renderReport() {
   const goal = getGoalTargets(getGoal());
-  const totals = getTotals();
-  const accounts = Object.values(groupByAccount(getQuarterRecords())).sort((a, b) => b.sales - a.sales);
+  const records = getQuarterRecords();
+  const totals = getTotals(records);
+  const accountRows = getAccountReportRows(goal, records);
+  const managerRows = getManagerReportRows(accountRows);
+  const accounts = accountRows.filter((row) => row.sales > 0 || row.salesTarget > 0).sort((a, b) => b.sales - a.sales || b.salesTarget - a.salesTarget);
   const actions = getQuarterActions();
   const pending = actions.filter((action) => action.status !== "완료");
   const salesGap = Math.max(goal.sales - totals.sales, 0);
@@ -3315,10 +3318,180 @@ function renderReport() {
       ${accounts.length ? `<ol>${accounts.slice(0, 5).map((row) => `<li>${escapeHtml(row.account)}: 매출 ${won(row.sales)}, 이익 ${won(row.profit)}, 마진 ${row.margin.toFixed(1)}%</li>`).join("")}</ol>` : "<p>등록된 실적이 없습니다.</p>"}
     </section>
     <section class="report-section">
+      <h3>담당자별 보고서</h3>
+      ${renderManagerReportTable(managerRows)}
+    </section>
+    <section class="report-section">
+      <h3>거래처별 보고서</h3>
+      ${renderAccountReportTable(accountRows)}
+    </section>
+    <section class="report-section">
       <h3>다음 실행</h3>
       ${pending.length ? `<ol>${pending.slice(0, 5).map((action) => `<li>${escapeHtml(action.title)} · ${escapeHtml(action.account)} · ${action.due} · ${action.status}</li>`).join("")}</ol>` : "<p>미완료 실행계획이 없습니다.</p>"}
     </section>
   `;
+}
+
+function getAccountReportRows(goal, records) {
+  const actualMap = groupByAccount(records);
+  const rowMap = new Map();
+  const upsert = (account) => {
+    const key = normalizeAccountKey(account);
+    if (!key) return null;
+    if (!rowMap.has(key)) {
+      rowMap.set(key, {
+        account,
+        owner: getAccountOwner(account),
+        salesTarget: 0,
+        profitTarget: 0,
+        sales: 0,
+        profit: 0,
+        margin: 0,
+        pendingPlanCount: 0,
+        pendingExpectedSales: 0,
+        pendingExpectedProfit: 0,
+      });
+    }
+    return rowMap.get(key);
+  };
+
+  (goal.allocations || []).forEach((allocation) => {
+    const row = upsert(allocation.account);
+    if (!row) return;
+    row.account = allocation.account;
+    row.owner = getAccountOwner(allocation.account);
+    row.salesTarget += Number(allocation.sales) || 0;
+    row.profitTarget += Number(allocation.profit) || 0;
+  });
+
+  Object.values(actualMap).forEach((actual) => {
+    const row = upsert(actual.account);
+    if (!row) return;
+    row.sales += Number(actual.sales) || 0;
+    row.profit += Number(actual.profit) || 0;
+    row.margin = margin(row.sales, row.profit);
+  });
+
+  rowMap.forEach((row) => {
+    const pendingPlans = getAllocationActions(row.account).filter((action) => action.status !== "완료");
+    row.pendingPlanCount = pendingPlans.length;
+    row.pendingExpectedSales = sum(pendingPlans, "expectedSales");
+    row.pendingExpectedProfit = sum(pendingPlans, "expectedProfit");
+  });
+
+  return [...rowMap.values()].sort((a, b) => b.salesTarget - a.salesTarget || b.sales - a.sales || a.account.localeCompare(b.account, "ko"));
+}
+
+function getManagerReportRows(accountRows) {
+  const map = {};
+  accountRows.forEach((account) => {
+    const owner = account.owner || "미지정";
+    if (!map[owner]) map[owner] = createManagerBucket(owner);
+    const row = map[owner];
+    row.accountSet.add(account.account);
+    row.accountCount = row.accountSet.size;
+    row.salesTarget += Number(account.salesTarget) || 0;
+    row.profitTarget += Number(account.profitTarget) || 0;
+    row.sales += Number(account.sales) || 0;
+    row.profit += Number(account.profit) || 0;
+    row.margin = margin(row.sales, row.profit);
+    row.pendingPlanCount = (row.pendingPlanCount || 0) + (Number(account.pendingPlanCount) || 0);
+    row.pendingExpectedSales = (row.pendingExpectedSales || 0) + (Number(account.pendingExpectedSales) || 0);
+    row.pendingExpectedProfit = (row.pendingExpectedProfit || 0) + (Number(account.pendingExpectedProfit) || 0);
+  });
+  return Object.values(map).sort((a, b) => b.salesTarget - a.salesTarget || b.sales - a.sales || a.owner.localeCompare(b.owner, "ko"));
+}
+
+function renderManagerReportTable(rows) {
+  if (!rows.length) return "<p>담당자별로 집계할 목표 또는 실적이 없습니다.</p>";
+  return `
+    <div class="table-wrap report-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>담당자</th>
+            <th class="num">거래처</th>
+            <th class="num">매출 목표</th>
+            <th class="num">매출 실적</th>
+            <th class="num">매출 달성률</th>
+            <th class="num">이익 목표</th>
+            <th class="num">이익 실적</th>
+            <th class="num">이익 달성률</th>
+            <th class="num">미완료 계획</th>
+            <th>관리 포인트</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.owner)}</td>
+              <td class="num">${row.accountCount.toLocaleString("ko-KR")}</td>
+              <td class="num">${won(row.salesTarget)}</td>
+              <td class="num">${won(row.sales)}</td>
+              <td class="num">${rate(row.sales, row.salesTarget).toFixed(1)}%</td>
+              <td class="num">${won(row.profitTarget)}</td>
+              <td class="num">${won(row.profit)}</td>
+              <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
+              <td class="num">${row.pendingPlanCount || 0}</td>
+              <td>${escapeHtml(reportFocusText(row))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAccountReportTable(rows) {
+  if (!rows.length) return "<p>거래처별로 집계할 목표 또는 실적이 없습니다.</p>";
+  return `
+    <div class="table-wrap report-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>거래처</th>
+            <th>담당자</th>
+            <th class="num">매출 목표</th>
+            <th class="num">매출 실적</th>
+            <th class="num">매출 달성률</th>
+            <th class="num">이익 목표</th>
+            <th class="num">이익 실적</th>
+            <th class="num">이익 달성률</th>
+            <th class="num">마진율</th>
+            <th class="num">미완료 계획</th>
+            <th>관리 포인트</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.account)}</td>
+              <td>${escapeHtml(row.owner)}</td>
+              <td class="num">${won(row.salesTarget)}</td>
+              <td class="num">${won(row.sales)}</td>
+              <td class="num">${rate(row.sales, row.salesTarget).toFixed(1)}%</td>
+              <td class="num">${won(row.profitTarget)}</td>
+              <td class="num">${won(row.profit)}</td>
+              <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
+              <td class="num">${row.margin.toFixed(1)}%</td>
+              <td class="num">${row.pendingPlanCount || 0}</td>
+              <td>${escapeHtml(reportFocusText(row))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function reportFocusText(row) {
+  const salesRate = rate(row.sales, row.salesTarget);
+  const profitRate = rate(row.profit, row.profitTarget);
+  if (row.salesTarget <= 0 && row.profitTarget <= 0) return "목표 배분 필요";
+  if (salesRate >= 100 && profitRate >= 100) return "목표 달성 유지";
+  if (salesRate < 70 || profitRate < 70) return row.pendingPlanCount ? "실행계획 점검 필요" : "추가 실행계획 필요";
+  if (profitRate < salesRate) return "이익률 개선 필요";
+  return "목표 달성 추적";
 }
 
 function renderData() {
