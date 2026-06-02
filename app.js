@@ -16,6 +16,7 @@ const monthByQuarter = {
 };
 const ALL_QUARTER = "ALL";
 const DELETED_ID_TYPES = ["records", "itemRecords", "actions", "accounts", "allocations", "extraGoals"];
+const ACCOUNT_COMPANIES = ["동부축산유통", "동부엠티"];
 
 const viewTitles = {
   dashboard: "대시보드",
@@ -145,6 +146,7 @@ const el = {
   accountForm: document.querySelector("#accountForm"),
   accountNameInput: document.querySelector("#accountNameInput"),
   accountOwnerInput: document.querySelector("#accountOwnerInput"),
+  accountCompanyInput: document.querySelector("#accountCompanyInput"),
   accountAliasInput: document.querySelector("#accountAliasInput"),
   accountMasterSummary: document.querySelector("#accountMasterSummary"),
   accountMasterNote: document.querySelector("#accountMasterNote"),
@@ -516,7 +518,7 @@ function deriveAccountsFromData(s) {
   (s.itemRecords || []).forEach((r) => r.account && names.add(String(r.account).trim()));
   Object.values(s.goals || {}).forEach((goal) => (goal.allocations || []).forEach((a) => a.account && names.add(String(a.account).trim())));
   (s.actions || []).forEach((a) => a.account && names.add(String(a.account).trim()));
-  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")).map((name) => ({ id: cryptoId(), name, owner: "", aliases: [] }));
+  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")).map((name) => ({ id: cryptoId(), name, owner: "", company: "", aliases: [] }));
 }
 
 function normalizeAccount(account) {
@@ -526,8 +528,17 @@ function normalizeAccount(account) {
     id: account.id || cryptoId(),
     name: String(account.name).trim(),
     owner: getCellText(account.owner || account.manager),
+    company: normalizeAccountCompany(account.company),
     aliases,
   };
+}
+
+function normalizeAccountCompany(value) {
+  const text = getCellText(value);
+  const key = text.toLowerCase().replace(/\s+/g, "");
+  if (key === "동부축산유통") return "동부축산유통";
+  if (key === "동부엠티" || key === "동부mt") return "동부엠티";
+  return ACCOUNT_COMPANIES.includes(text) ? text : "";
 }
 
 function normalizeDeletedIds(source = {}) {
@@ -2889,7 +2900,13 @@ function mergeAccountsForSync(serverAccounts = [], localAccounts = []) {
       return;
     }
     const aliases = new Set([...(existing.aliases || []), ...(account.aliases || [])]);
-    map.set(key, { ...existing, ...account, owner: account.owner || existing.owner || "", aliases: [...aliases] });
+    map.set(key, {
+      ...existing,
+      ...account,
+      owner: account.owner || existing.owner || "",
+      company: normalizeAccountCompany(account.company) || normalizeAccountCompany(existing.company),
+      aliases: [...aliases],
+    });
   });
   return [...map.values()];
 }
@@ -2982,7 +2999,7 @@ function ensureAccountFromImport(raw) {
   if (!text) return text;
   const resolved = resolveAccountName(text);
   if (resolved.matched) return resolved.name;
-  state.accounts.push({ id: cryptoId(), name: text, owner: "", aliases: [] });
+  state.accounts.push({ id: cryptoId(), name: text, owner: "", company: "", aliases: [] });
   return text;
 }
 
@@ -2992,6 +3009,7 @@ function bindAccountMaster() {
     const name = el.accountNameInput.value.trim();
     if (!name) return;
     const owner = el.accountOwnerInput.value.trim();
+    const company = normalizeAccountCompany(el.accountCompanyInput?.value);
     const aliases = el.accountAliasInput.value
       .split(",")
       .map((alias) => alias.trim())
@@ -2999,10 +3017,11 @@ function bindAccountMaster() {
     const existing = state.accounts.find((account) => normalizeAccountKey(account.name) === normalizeAccountKey(name));
     if (existing) {
       if (owner) existing.owner = owner;
+      if (company) existing.company = company;
       aliases.forEach((alias) => addAliasToAccount(existing, alias));
-      showToast("이미 있는 거래처라 담당자와 별칭을 반영했습니다.", "success");
+      showToast("이미 있는 거래처라 담당자, 회사 구분, 별칭을 반영했습니다.", "success");
     } else {
-      const account = { id: cryptoId(), name, owner, aliases: [] };
+      const account = { id: cryptoId(), name, owner, company, aliases: [] };
       aliases.forEach((alias) => addAliasToAccount(account, alias));
       state.accounts.push(account);
       showToast("거래처를 추가했습니다.", "success");
@@ -3053,12 +3072,14 @@ function renderAccountMaster() {
   const accounts = sortTableRows([...state.accounts], "accountMaster", {
     name: (account) => account.name,
     owner: (account) => account.owner || "",
+    company: (account) => account.company || "",
     aliases: (account) => (account.aliases || []).join(", "),
     recordCount: (account) => countAccountRecords(account).recordCount,
   }, (a, b) => a.name.localeCompare(b.name, "ko"));
   const aliasTotal = accounts.reduce((total, account) => total + (account.aliases ? account.aliases.length : 0), 0);
   const ownerTotal = new Set(accounts.map((account) => account.owner).filter(Boolean)).size;
-  el.accountMasterSummary.textContent = `거래처 ${accounts.length.toLocaleString("ko-KR")}곳 · 담당자 ${ownerTotal.toLocaleString("ko-KR")}명 · 등록 별칭 ${aliasTotal.toLocaleString("ko-KR")}개`;
+  const companySummary = ACCOUNT_COMPANIES.map((company) => `${company} ${accounts.filter((account) => account.company === company).length.toLocaleString("ko-KR")}곳`).join(" · ");
+  el.accountMasterSummary.textContent = `거래처 ${accounts.length.toLocaleString("ko-KR")}곳 · 담당자 ${ownerTotal.toLocaleString("ko-KR")}명 · ${companySummary} · 등록 별칭 ${aliasTotal.toLocaleString("ko-KR")}개`;
   el.accountMasterNote.innerHTML =
     "<p>엑셀을 반영하면 거래처명이 여기 정식명으로 자동 치환됩니다. 표기가 갈라진 거래처는 별칭을 추가하거나 병합으로 하나로 합칠 수 있습니다. 기존 데이터를 마스터에 맞춰 정리하려면 ‘기존 실적 재매칭’을 누르세요.</p>";
 
@@ -3089,6 +3110,10 @@ function renderAccountMaster() {
                 <button class="link-button" type="button" data-edit-owner="${account.id}">담당수정</button>
               </td>
               <td>
+                <strong>${escapeHtml(account.company || "미지정")}</strong>
+                <button class="link-button" type="button" data-edit-company="${account.id}">회사수정</button>
+              </td>
+              <td>
                 <div class="alias-cell">${aliasChips}</div>
                 <button class="link-button" type="button" data-add-alias="${account.id}">+ 별칭추가</button>
               </td>
@@ -3111,7 +3136,7 @@ function renderAccountMaster() {
           `;
         })
         .join("")
-    : `<tr><td colspan="6">${emptyState("등록된 거래처가 없습니다. 위에서 추가하거나 엑셀을 반영하면 자동 등록됩니다.")}</td></tr>`;
+    : `<tr><td colspan="7">${emptyState("등록된 거래처가 없습니다. 위에서 추가하거나 엑셀을 반영하면 자동 등록됩니다.")}</td></tr>`;
 
   document.querySelectorAll("[data-add-alias]").forEach((button) => {
     button.addEventListener("click", () => promptAddAlias(button.dataset.addAlias));
@@ -3124,6 +3149,9 @@ function renderAccountMaster() {
   });
   document.querySelectorAll("[data-edit-owner]").forEach((button) => {
     button.addEventListener("click", () => promptEditAccountOwner(button.dataset.editOwner));
+  });
+  document.querySelectorAll("[data-edit-company]").forEach((button) => {
+    button.addEventListener("click", () => promptEditAccountCompany(button.dataset.editCompany));
   });
   document.querySelectorAll("[data-merge-from]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -3200,6 +3228,22 @@ function promptEditAccountOwner(id) {
   showToast("담당자를 수정했습니다.", "success");
 }
 
+function promptEditAccountCompany(id) {
+  const account = state.accounts.find((a) => a.id === id);
+  if (!account) return;
+  const input = prompt(`'${account.name}' 회사 구분을 입력하세요.\n가능한 값: ${ACCOUNT_COMPANIES.join(", ")}\n비워두면 미지정으로 표시됩니다.`, account.company || "");
+  if (input === null) return;
+  const company = normalizeAccountCompany(input.trim());
+  if (input.trim() && !company) {
+    showToast("회사 구분은 동부축산유통 또는 동부엠티만 입력할 수 있습니다.", "error");
+    return;
+  }
+  account.company = company;
+  saveState();
+  renderAll();
+  showToast("회사 구분을 수정했습니다.", "success");
+}
+
 // fromName(정확히 일치하는 문자열)을 toName으로 일괄 변경
 function repointAccountName(fromName, toName) {
   const fromKey = normalizeAccountKey(fromName);
@@ -3225,6 +3269,7 @@ function mergeAccounts(fromId, toId) {
 
   // from의 이름+별칭을 to의 별칭으로 흡수
   if (!to.owner && from.owner) to.owner = from.owner;
+  if (!to.company && from.company) to.company = from.company;
   addAliasToAccount(to, from.name);
   (from.aliases || []).forEach((alias) => addAliasToAccount(to, alias));
   // from에 연결된 모든 데이터의 거래처명을 to 정식명으로 변경

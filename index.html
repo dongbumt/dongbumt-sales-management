@@ -619,6 +619,14 @@
                 <span>담당자</span>
                 <input id="accountOwnerInput" type="text" placeholder="예: 영업1팀" />
               </label>
+              <label>
+                <span>회사 구분</span>
+                <select id="accountCompanyInput">
+                  <option value="">선택 안함</option>
+                  <option value="동부축산유통">동부축산유통</option>
+                  <option value="동부엠티">동부엠티</option>
+                </select>
+              </label>
               <label class="wide-field">
                 <span>별칭 (쉼표로 구분, 선택)</span>
                 <input id="accountAliasInput" type="text" placeholder="예: (주)동원홈푸드(2026), 동원" />
@@ -642,6 +650,7 @@
                   <tr>
                     <th data-sort-table="accountMaster" data-sort-key="name">정식 거래처명</th>
                     <th data-sort-table="accountMaster" data-sort-key="owner">담당자</th>
+                    <th data-sort-table="accountMaster" data-sort-key="company">회사 구분</th>
                     <th data-sort-table="accountMaster" data-sort-key="aliases">별칭</th>
                     <th class="num" data-sort-table="accountMaster" data-sort-key="recordCount" data-sort-type="number">연결 실적</th>
                     <th>병합</th>
