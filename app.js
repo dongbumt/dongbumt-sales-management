@@ -3411,13 +3411,12 @@ function renderManagerReportTable(rows) {
           <tr>
             <th>담당자</th>
             <th class="num">거래처</th>
-            <th class="num">매출 목표</th>
-            <th class="num">매출 실적</th>
-            <th class="num">매출 달성률</th>
-            <th class="num">이익 목표</th>
-            <th class="num">이익 실적</th>
-            <th class="num">이익 달성률</th>
-            <th class="num">미완료 계획</th>
+            <th class="num">매출 실적/목표</th>
+            <th class="num">매출률</th>
+            <th class="num">이익 실적/목표</th>
+            <th class="num">이익률</th>
+            <th class="num">이익달성</th>
+            <th class="num">미완료</th>
             <th>관리 포인트</th>
           </tr>
         </thead>
@@ -3426,11 +3425,10 @@ function renderManagerReportTable(rows) {
             <tr>
               <td>${escapeHtml(row.owner)}</td>
               <td class="num">${row.accountCount.toLocaleString("ko-KR")}</td>
-              <td class="num">${won(row.salesTarget)}</td>
-              <td class="num">${won(row.sales)}</td>
+              <td class="num">${won(row.sales)} / ${won(row.salesTarget)}</td>
               <td class="num">${rate(row.sales, row.salesTarget).toFixed(1)}%</td>
-              <td class="num">${won(row.profitTarget)}</td>
-              <td class="num">${won(row.profit)}</td>
+              <td class="num">${won(row.profit)} / ${won(row.profitTarget)}</td>
+              <td class="num">${row.margin.toFixed(1)}%</td>
               <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
               <td class="num">${row.pendingPlanCount || 0}</td>
               <td>${escapeHtml(reportFocusText(row))}</td>
@@ -3451,14 +3449,12 @@ function renderAccountReportTable(rows) {
           <tr>
             <th>거래처</th>
             <th>담당자</th>
-            <th class="num">매출 목표</th>
-            <th class="num">매출 실적</th>
-            <th class="num">매출 달성률</th>
-            <th class="num">이익 목표</th>
-            <th class="num">이익 실적</th>
-            <th class="num">이익 달성률</th>
-            <th class="num">마진율</th>
-            <th class="num">미완료 계획</th>
+            <th class="num">매출 실적/목표</th>
+            <th class="num">매출률</th>
+            <th class="num">이익 실적/목표</th>
+            <th class="num">이익률</th>
+            <th class="num">이익달성</th>
+            <th class="num">미완료</th>
             <th>관리 포인트</th>
           </tr>
         </thead>
@@ -3467,13 +3463,11 @@ function renderAccountReportTable(rows) {
             <tr>
               <td>${escapeHtml(row.account)}</td>
               <td>${escapeHtml(row.owner)}</td>
-              <td class="num">${won(row.salesTarget)}</td>
-              <td class="num">${won(row.sales)}</td>
+              <td class="num">${won(row.sales)} / ${won(row.salesTarget)}</td>
               <td class="num">${rate(row.sales, row.salesTarget).toFixed(1)}%</td>
-              <td class="num">${won(row.profitTarget)}</td>
-              <td class="num">${won(row.profit)}</td>
-              <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
+              <td class="num">${won(row.profit)} / ${won(row.profitTarget)}</td>
               <td class="num">${row.margin.toFixed(1)}%</td>
+              <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
               <td class="num">${row.pendingPlanCount || 0}</td>
               <td>${escapeHtml(reportFocusText(row))}</td>
             </tr>

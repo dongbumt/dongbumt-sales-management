@@ -962,19 +962,29 @@ td {
 
 .report-table-wrap {
   margin-top: 10px;
+  overflow-x: visible;
 }
 
 .report-table-wrap table {
-  min-width: 1180px;
+  min-width: 0;
+  table-layout: fixed;
 }
 
 .report-table-wrap th,
 .report-table-wrap td {
-  font-size: 12px;
+  padding: 7px 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.report-table-wrap th.num,
+.report-table-wrap td.num {
+  white-space: nowrap;
 }
 
 .report-table-wrap td:last-child {
-  min-width: 120px;
+  width: 90px;
 }
 
 .empty-state {
