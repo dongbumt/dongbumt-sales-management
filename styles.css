@@ -967,24 +967,26 @@ td {
 
 .report-table-wrap table {
   min-width: 0;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .report-table-wrap th,
 .report-table-wrap td {
-  padding: 7px 3px;
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 6px 1px;
+  font-size: 13px;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .report-table-wrap th.num,
 .report-table-wrap td.num {
+  padding-left: 1px;
+  padding-right: 1px;
   white-space: nowrap;
 }
 
 .report-table-wrap td:last-child {
-  width: 82px;
+  width: 76px;
 }
 
 .company-report-group {
@@ -1237,9 +1239,9 @@ td {
 
   .report-table-wrap th,
   .report-table-wrap td {
-    padding: 4px 2px;
-    font-size: 9.4px;
-    line-height: 1.32;
+    padding: 3px 1px;
+    font-size: 10.4px;
+    line-height: 1.25;
   }
 }
 
