@@ -3383,7 +3383,7 @@ function updateReportPreviewScale() {
 
   const a4Width = 1123;
   const availableWidth = Math.max(stage.clientWidth, 1);
-  const scale = Math.min(1, availableWidth / a4Width);
+  const scale = Math.min(0.985, availableWidth / a4Width);
   document.documentElement.style.setProperty("--report-preview-scale", scale.toFixed(3));
   stage.style.height = `${Math.ceil(panel.scrollHeight * scale)}px`;
 }
@@ -3401,11 +3401,11 @@ function prepareReportPrintScale() {
   document.documentElement.style.setProperty("--print-scale", "1");
 
   // A4 landscape full page at 96dpi. The panel itself includes the visual page margin.
-  const pageWidth = 1123;
-  const pageHeight = 794;
+  const pageWidth = 1090;
+  const pageHeight = 760;
   const widthScale = pageWidth / Math.max(panel.scrollWidth, 1);
   const heightScale = pageHeight / Math.max(panel.scrollHeight, 1);
-  const scale = Math.min(1, widthScale, heightScale);
+  const scale = Math.min(0.985, widthScale, heightScale);
   document.documentElement.style.setProperty("--print-scale", scale.toFixed(3));
   return scale;
 }
@@ -3498,12 +3498,10 @@ function renderManagerReportTable(rows) {
             <th>담당자</th>
             <th class="num">거래처</th>
             <th class="num">매출 실적/목표</th>
-            <th class="num">매출률</th>
+            <th class="num">매출달성률</th>
             <th class="num">이익 실적/목표</th>
             <th class="num">이익률</th>
             <th class="num">이익달성</th>
-            <th class="num">미완료</th>
-            <th>관리 포인트</th>
           </tr>
         </thead>
         <tbody>
@@ -3516,8 +3514,6 @@ function renderManagerReportTable(rows) {
               <td class="num">${won(row.profit)} / ${won(row.profitTarget)}</td>
               <td class="num">${row.margin.toFixed(1)}%</td>
               <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
-              <td class="num">${row.pendingPlanCount || 0}</td>
-              <td>${escapeHtml(reportFocusText(row))}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -3571,12 +3567,10 @@ function renderAccountReportRowsTable(rows) {
             <th>거래처</th>
             <th>담당자</th>
             <th class="num">매출 실적/목표</th>
-            <th class="num">매출률</th>
+            <th class="num">매출달성률</th>
             <th class="num">이익 실적/목표</th>
             <th class="num">이익률</th>
             <th class="num">이익달성</th>
-            <th class="num">미완료</th>
-            <th>관리 포인트</th>
           </tr>
         </thead>
         <tbody>
@@ -3589,8 +3583,6 @@ function renderAccountReportRowsTable(rows) {
               <td class="num">${won(row.profit)} / ${won(row.profitTarget)}</td>
               <td class="num">${row.margin.toFixed(1)}%</td>
               <td class="num">${rate(row.profit, row.profitTarget).toFixed(1)}%</td>
-              <td class="num">${row.pendingPlanCount || 0}</td>
-              <td>${escapeHtml(reportFocusText(row))}</td>
             </tr>
           `).join("")}
         </tbody>

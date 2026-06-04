@@ -1036,10 +1036,6 @@ td {
   white-space: nowrap;
 }
 
-.report-table-wrap td:last-child {
-  width: 76px;
-}
-
 .company-report-group {
   margin-top: 9px;
 }
@@ -1197,7 +1193,7 @@ td {
 
   .report-preview-stage {
     width: var(--report-page-width);
-    height: auto !important;
+    height: var(--report-page-min-height) !important;
     overflow: visible;
   }
 
@@ -1225,8 +1221,12 @@ td {
     max-width: none;
     margin: 0;
     padding: var(--report-page-padding);
-    transform: none;
-    zoom: var(--print-scale, 1);
+    transform: scale(var(--print-scale, 1));
+    transform-origin: top left;
+  }
+
+  body.print-one-page .report-preview-stage {
+    overflow: hidden;
   }
 }
 
