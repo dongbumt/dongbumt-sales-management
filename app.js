@@ -3348,12 +3348,14 @@ function renderReport() {
   const pending = actions.filter((action) => action.status !== "완료");
 
   el.reportBody.innerHTML = `
-    <section class="report-section">
-      <h3>${getSelectedPeriodLabel()} 대기업납품 실적</h3>
-      <div class="report-metrics">
-        <article class="report-metric"><span>매출</span><strong>${won(totals.sales)}</strong></article>
-        <article class="report-metric"><span>매출이익</span><strong>${won(totals.profit)}</strong></article>
-        <article class="report-metric"><span>마진율</span><strong>${totals.margin.toFixed(1)}%</strong></article>
+    <section class="report-section report-summary-section">
+      <div class="report-summary-row">
+        <h3>${getSelectedPeriodLabel()} 대기업납품 실적</h3>
+        <div class="report-metrics">
+          <article class="report-metric"><span>매출</span><strong>${won(totals.sales)}</strong></article>
+          <article class="report-metric"><span>매출이익</span><strong>${won(totals.profit)}</strong></article>
+          <article class="report-metric"><span>마진율</span><strong>${totals.margin.toFixed(1)}%</strong></article>
+        </div>
       </div>
     </section>
     <section class="report-section">
