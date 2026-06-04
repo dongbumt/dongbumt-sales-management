@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>동부엠티 대기업납품 목표관리</title>
     <script src="lib/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260604-a4-preview" />
   </head>
   <body>
     <div class="app-shell">
@@ -710,16 +710,18 @@
         </section>
 
         <section class="view" id="report">
-          <section class="panel report-panel">
-            <div class="panel-header">
-              <div>
-                <h2>분기 보고서</h2>
-                <p>선택한 분기 기준 자동 요약</p>
+          <div class="report-preview-stage">
+            <section class="panel report-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>분기 보고서</h2>
+                  <p>선택한 분기 기준 자동 요약</p>
+                </div>
+                <button class="secondary-button" type="button" id="printButton">인쇄</button>
               </div>
-              <button class="secondary-button" type="button" id="printButton">인쇄</button>
-            </div>
-            <div class="report-body" id="reportBody"></div>
-          </section>
+              <div class="report-body" id="reportBody"></div>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="data">
@@ -805,6 +807,6 @@
     </div>
 
     <div class="toast-root" id="toastRoot" aria-live="polite"></div>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260604-a4-preview"></script>
   </body>
 </html>
