@@ -171,7 +171,7 @@ h3 {
 }
 
 .topbar-controls {
-  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
   align-items: end;
 }
 
@@ -251,7 +251,7 @@ button:focus-visible {
 
 .segmented-control {
   display: inline-grid;
-  grid-template-columns: repeat(3, minmax(86px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;

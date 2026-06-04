@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>동부엠티 대기업납품 목표관리</title>
     <script src="lib/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css?v=20260604-report-metrics-row" />
+    <link rel="stylesheet" href="styles.css?v=20260604-month-period" />
   </head>
   <body>
     <div class="app-shell">
@@ -38,6 +38,14 @@
           </div>
           <div class="topbar-controls">
             <label>
+              <span>보기 기준</span>
+              <select id="periodSelect">
+                <option value="quarter">분기별</option>
+                <option value="month">월별</option>
+                <option value="year">연도별</option>
+              </select>
+            </label>
+            <label>
               <span>연도</span>
               <select id="yearSelect"></select>
             </label>
@@ -51,6 +59,10 @@
                 <option value="Q4">4분기</option>
               </select>
             </label>
+            <label>
+              <span>월</span>
+              <input id="activeMonthInput" type="month" />
+            </label>
             <div class="storage-chip" id="storageStatus">브라우저 저장</div>
           </div>
         </header>
@@ -63,6 +75,7 @@
             </div>
             <div class="segmented-control" aria-label="대시보드 보기 기준">
               <button class="segment-button active" type="button" data-dashboard-period="quarter">분기별</button>
+              <button class="segment-button" type="button" data-dashboard-period="month">월별</button>
               <button class="segment-button" type="button" data-dashboard-period="year">연도별</button>
               <button class="segment-button" type="button" data-dashboard-period="fiveYear">최근 5년</button>
             </div>
@@ -807,6 +820,6 @@
     </div>
 
     <div class="toast-root" id="toastRoot" aria-live="polite"></div>
-    <script src="app.js?v=20260604-report-metrics-row"></script>
+    <script src="app.js?v=20260604-month-period"></script>
   </body>
 </html>

@@ -33,6 +33,7 @@ const viewTitles = {
 const currentDate = new Date();
 const currentYear = currentDate.getFullYear();
 const currentQuarter = `Q${Math.floor(currentDate.getMonth() / 3) + 1}`;
+const currentMonthValue = `${currentYear}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
 
 let state = loadState();
 let fileHandle = null;
@@ -51,8 +52,10 @@ let excelMeta = null;
 
 const el = {
   viewTitle: document.querySelector("#viewTitle"),
+  periodSelect: document.querySelector("#periodSelect"),
   yearSelect: document.querySelector("#yearSelect"),
   quarterSelect: document.querySelector("#quarterSelect"),
+  activeMonthInput: document.querySelector("#activeMonthInput"),
   storageStatus: document.querySelector("#storageStatus"),
   kpiGrid: document.querySelector("#kpiGrid"),
   monthlyChart: document.querySelector("#monthlyChart"),
@@ -177,8 +180,10 @@ init();
 
 function init() {
   fillYearOptions();
+  el.periodSelect.value = state.activePeriod;
   el.yearSelect.value = state.activeYear;
   el.quarterSelect.value = state.activeQuarter;
+  el.activeMonthInput.value = state.activeMonth || getDefaultMonthInputValue();
   el.monthInput.value = getDefaultMonthInputValue();
   if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
 
@@ -189,6 +194,10 @@ function init() {
   el.dashboardPeriodButtons.forEach((button) => {
     button.addEventListener("click", () => {
       state.dashboardPeriod = button.dataset.dashboardPeriod;
+      if (["month", "quarter", "year"].includes(state.dashboardPeriod)) {
+        state.activePeriod = state.dashboardPeriod;
+        syncSelectedMonthToPeriod();
+      }
       saveState({ localOnly: true });
       renderAll();
     });
@@ -197,16 +206,47 @@ function init() {
   bindAnalysisPeriodControls("item", el.itemPeriodButtons, el.itemMonthInput, renderItemAnalysis);
   bindSortableTables();
 
+  el.periodSelect.addEventListener("change", () => {
+    state.activePeriod = el.periodSelect.value;
+    state.dashboardPeriod = state.activePeriod;
+    state.itemAnalysisPeriod = state.activePeriod;
+    syncSelectedMonthToPeriod();
+    if (state.activePeriod === "month") {
+      state.accountAnalysisMonth = state.activeMonth;
+      state.itemAnalysisMonth = state.activeMonth;
+    }
+    saveState();
+    renderAll();
+  });
+
   el.yearSelect.addEventListener("change", () => {
     state.activeYear = Number(el.yearSelect.value);
+    state.activeMonth = `${state.activeYear}-${String((state.activeMonth || getDefaultMonthInputValue()).slice(5, 7) || "01").padStart(2, "0")}`;
+    state.activeMonth = normalizeAnalysisMonth(state.activeMonth, state.activeYear, state.activeQuarter);
     syncAnalysisMonthYears();
+    syncSelectedMonthToPeriod();
     saveState();
     renderAll();
   });
 
   el.quarterSelect.addEventListener("change", () => {
     state.activeQuarter = el.quarterSelect.value;
+    syncSelectedMonthToPeriod();
     el.monthInput.value = getDefaultMonthInputValue();
+    if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
+    saveState();
+    renderAll();
+  });
+
+  el.activeMonthInput.addEventListener("change", () => {
+    const month = normalizeAnalysisMonth(el.activeMonthInput.value, state.activeYear, state.activeQuarter);
+    state.activeMonth = month;
+    state.activeYear = Number(month.slice(0, 4));
+    state.activeQuarter = quarterFromMonth(month);
+    state.accountAnalysisMonth = month;
+    state.itemAnalysisMonth = month;
+    syncPeriodControls();
+    syncAnalysisMonthYears();
     if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
     saveState();
     renderAll();
@@ -294,8 +334,44 @@ function syncAnalysisMonthYears() {
   });
 }
 
+function syncPeriodControls() {
+  if (el.periodSelect) el.periodSelect.value = state.activePeriod;
+  if (el.yearSelect) el.yearSelect.value = state.activeYear;
+  if (el.quarterSelect) {
+    el.quarterSelect.value = state.activeQuarter;
+    el.quarterSelect.disabled = state.activePeriod !== "quarter";
+  }
+  if (el.activeMonthInput) {
+    el.activeMonthInput.value = state.activeMonth || getDefaultMonthInputValue();
+    el.activeMonthInput.disabled = state.activePeriod !== "month";
+  }
+}
+
+function syncSelectedMonthToPeriod() {
+  if (state.activePeriod === "month") {
+    state.activeMonth = normalizeAnalysisMonth(state.activeMonth, state.activeYear, state.activeQuarter);
+    state.activeYear = Number(state.activeMonth.slice(0, 4));
+    state.activeQuarter = quarterFromMonth(state.activeMonth);
+  } else if (state.activePeriod === "year") {
+    state.activeMonth = normalizeAnalysisMonth(state.activeMonth, state.activeYear, state.activeQuarter);
+    if (!state.activeMonth.startsWith(`${state.activeYear}-`)) {
+      state.activeMonth = `${state.activeYear}-01`;
+    }
+  } else {
+    const months = getQuarterMonthCodes(state.activeQuarter);
+    if (!state.activeMonth || !state.activeMonth.startsWith(`${state.activeYear}-`) || !months.includes(state.activeMonth.slice(5, 7))) {
+      state.activeMonth = `${state.activeYear}-${months[0]}`;
+    }
+  }
+  syncPeriodControls();
+}
+
 function getDefaultAnalysisMonth() {
   return getDefaultMonthInputValue();
+}
+
+function getYearMonthKeys(year = state.activeYear) {
+  return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
 }
 
 function getQuarterMonthCodes(quarter) {
@@ -303,15 +379,31 @@ function getQuarterMonthCodes(quarter) {
   return monthByQuarter[quarter] || monthByQuarter[currentQuarter];
 }
 
-function getSelectedMonthKeys() {
+function getQuarterSelectedMonthKeys() {
   return getQuarterMonthCodes(state.activeQuarter).map((month) => `${state.activeYear}-${month}`);
 }
 
+function getSelectedMonthKeys() {
+  if (state.activePeriod === "month") {
+    const month = normalizeAnalysisMonth(state.activeMonth, state.activeYear, state.activeQuarter);
+    return [month];
+  }
+  if (state.activePeriod === "year") {
+    return getYearMonthKeys(state.activeYear);
+  }
+  return getQuarterSelectedMonthKeys();
+}
+
 function getDefaultMonthInputValue() {
+  if (state.activePeriod === "month" && state.activeMonth) {
+    return state.activeMonth;
+  }
   return `${state.activeYear}-${getQuarterMonthCodes(state.activeQuarter)[0]}`;
 }
 
 function getSelectedPeriodLabel() {
+  if (state.activePeriod === "month") return formatMonth(state.activeMonth || getDefaultMonthInputValue());
+  if (state.activePeriod === "year") return `${state.activeYear}년`;
   return `${state.activeYear}년 ${quarterLabel(state.activeQuarter)}`;
 }
 
@@ -328,8 +420,10 @@ function createDefaultState() {
   return {
     version: "1.1",
     lastUpdated: "",
+    activePeriod: "quarter",
     activeYear: currentYear,
     activeQuarter: currentQuarter,
+    activeMonth: currentMonthValue,
     dashboardPeriod: "quarter",
     accountAnalysisPeriod: "quarter",
     accountAnalysisMonth: `${currentYear}-${monthByQuarter[currentQuarter][0]}`,
@@ -377,13 +471,17 @@ function normalizeState(input) {
   const hasKnownQuarter = source.activeQuarter === ALL_QUARTER || Boolean(monthByQuarter[source.activeQuarter]);
   const activeQuarter = hasKnownQuarter ? source.activeQuarter : fallback.activeQuarter;
   const activeYear = Number(source.activeYear) || fallback.activeYear;
+  const activePeriod = ["month", "quarter", "year"].includes(source.activePeriod) ? source.activePeriod : fallback.activePeriod;
+  const activeMonth = normalizeAnalysisMonth(source.activeMonth, activeYear, activeQuarter);
 
   const normalized = {
     version: source.version || "1.1",
     lastUpdated: source.lastUpdated || "",
+    activePeriod,
     activeYear,
     activeQuarter,
-    dashboardPeriod: ["quarter", "year", "fiveYear"].includes(source.dashboardPeriod) ? source.dashboardPeriod : fallback.dashboardPeriod,
+    activeMonth,
+    dashboardPeriod: ["month", "quarter", "year", "fiveYear"].includes(source.dashboardPeriod) ? source.dashboardPeriod : fallback.dashboardPeriod,
     accountAnalysisPeriod: ["month", "quarter", "year"].includes(source.accountAnalysisPeriod) ? source.accountAnalysisPeriod : fallback.accountAnalysisPeriod,
     accountAnalysisMonth: normalizeAnalysisMonth(source.accountAnalysisMonth, activeYear, activeQuarter),
     accountChartAccount: source.accountChartAccount ? String(source.accountChartAccount) : fallback.accountChartAccount,
@@ -707,6 +805,7 @@ function bindForms() {
     });
     state.activeYear = Number(el.monthInput.value.slice(0, 4));
     state.activeQuarter = quarterFromMonth(el.monthInput.value);
+    state.activeMonth = el.monthInput.value;
     el.yearSelect.value = state.activeYear;
     el.quarterSelect.value = state.activeQuarter;
     el.monthlyForm.reset();
@@ -725,6 +824,10 @@ function bindForms() {
 
   el.allocationForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (!isEditableGoalPeriod()) {
+      showToast("목표 배분 수정은 분기별 선택에서만 가능합니다.", "error");
+      return;
+    }
     if (el.allocationPlanTitleInput?.value.trim() && state.activeQuarter === ALL_QUARTER) {
       showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
       return;
@@ -756,6 +859,10 @@ function bindForms() {
   if (el.extraGoalForm) {
     el.extraGoalForm.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (!isEditableGoalPeriod()) {
+        showToast("부가 목표 수정은 분기별 선택에서만 가능합니다.", "error");
+        return;
+      }
       const goal = getGoal();
       const editId = el.extraGoalEditIdInput.value;
       const payload = normalizeExtraGoal({
@@ -840,6 +947,7 @@ function setView(viewId) {
 }
 
 function renderAll() {
+  syncPeriodControls();
   ensureGoal();
   renderDashboard();
   renderMonthly();
@@ -859,6 +967,21 @@ function getSelectedKey() {
   return `${state.activeYear}-${state.activeQuarter}`;
 }
 
+function getGoalKeyForMonth(monthValue) {
+  return `${Number(monthValue.slice(0, 4))}-${quarterFromMonth(monthValue)}`;
+}
+
+function emptyGoal() {
+  return { sales: 0, profit: 0, margin: 0, allocations: [], extraGoals: [] };
+}
+
+function getGoalByKey(key) {
+  const goal = state.goals[key] || emptyGoal();
+  goal.allocations = Array.isArray(goal.allocations) ? goal.allocations : [];
+  goal.extraGoals = Array.isArray(goal.extraGoals) ? goal.extraGoals.map(normalizeExtraGoal).filter(Boolean) : [];
+  return goal;
+}
+
 function ensureGoal() {
   const key = getSelectedKey();
   if (!state.goals[key]) {
@@ -873,6 +996,10 @@ function getGoal() {
   return state.goals[getSelectedKey()];
 }
 
+function isEditableGoalPeriod() {
+  return state.activePeriod === "quarter" && state.activeQuarter !== ALL_QUARTER;
+}
+
 function getGoalTargets(goal = getGoal()) {
   const allocations = Array.isArray(goal.allocations) ? goal.allocations : [];
   const sales = sum(allocations, "sales");
@@ -883,6 +1010,49 @@ function getGoalTargets(goal = getGoal()) {
     profit,
     margin: margin(sales, profit),
   };
+}
+
+function scaleGoalTargets(goal, scale) {
+  const source = getGoalTargets(goal);
+  const allocations = (source.allocations || []).map((allocation) => ({
+    ...allocation,
+    sales: (Number(allocation.sales) || 0) * scale,
+    profit: (Number(allocation.profit) || 0) * scale,
+  }));
+  return getGoalTargets({ ...source, allocations });
+}
+
+function aggregateGoalDetails(keys) {
+  const allocationMap = new Map();
+  const extraGoals = [];
+
+  keys.forEach((key) => {
+    const goal = getGoalByKey(key);
+    (goal.allocations || []).forEach((allocation) => {
+      const mapKey = normalizeAccountKey(allocation.account) || allocation.account;
+      const existing = allocationMap.get(mapKey) || { id: `view-${mapKey}`, account: allocation.account, sales: 0, profit: 0 };
+      existing.sales += Number(allocation.sales) || 0;
+      existing.profit += Number(allocation.profit) || 0;
+      allocationMap.set(mapKey, existing);
+    });
+    (goal.extraGoals || []).forEach((extraGoal) => extraGoals.push({ ...extraGoal, id: `${key}-${extraGoal.id}` }));
+  });
+
+  return getGoalTargets({ ...emptyGoal(), allocations: [...allocationMap.values()], extraGoals });
+}
+
+function getSelectedGoalTargets() {
+  if (state.activePeriod === "month") {
+    const month = state.activeMonth || getDefaultMonthInputValue();
+    return scaleGoalTargets(getGoalByKey(getGoalKeyForMonth(month)), 1 / 3);
+  }
+  if (state.activePeriod === "year") {
+    return aggregateGoalDetails(getYearGoalKeys(state.activeYear));
+  }
+  if (state.activeQuarter === ALL_QUARTER) {
+    return aggregateGoalDetails(getYearGoalKeys(state.activeYear));
+  }
+  return getGoalTargets(getGoal());
 }
 
 function syncGoalTargets(goal = getGoal()) {
@@ -953,7 +1123,7 @@ function getAnalysisRecords(records, period, month) {
   if (period === "year") {
     return records.filter((record) => record.month.startsWith(`${state.activeYear}-`));
   }
-  const months = getSelectedMonthKeys();
+  const months = getQuarterSelectedMonthKeys();
   return records.filter((record) => months.includes(record.month));
 }
 
@@ -976,6 +1146,15 @@ function renderAnalysisControls(kind, buttons, monthInput) {
 function getQuarterActions() {
   const months = getSelectedMonthKeys();
   const key = getSelectedKey();
+  if (state.activePeriod === "month") {
+    return state.actions.filter((action) => months.includes(action.due.slice(0, 7)));
+  }
+  if (state.activePeriod === "year") {
+    return state.actions.filter((action) => {
+      if (action.quarterKey) return action.quarterKey.startsWith(`${state.activeYear}-`);
+      return action.due.startsWith(`${state.activeYear}-`);
+    });
+  }
   const isAll = state.activeQuarter === ALL_QUARTER;
   return state.actions.filter((action) => {
     if (action.quarterKey) {
@@ -1081,6 +1260,32 @@ function kpiCard(label, value, meta) {
 
 function getDashboardContext() {
   const period = state.dashboardPeriod || "quarter";
+
+  if (period === "month") {
+    const month = state.activeMonth || getDefaultMonthInputValue();
+    const records = state.records.filter((record) => record.month === month);
+    const actions = state.actions.filter((action) => action.due.slice(0, 7) === month);
+    const label = formatMonth(month);
+    return {
+      period,
+      label,
+      kpiPrefix: "월",
+      records,
+      actions,
+      goal: scaleGoalTargets(getGoalByKey(getGoalKeyForMonth(month)), 1 / 3),
+      trendTitle: "월별 실적",
+      trendSubtitle: `${label} 매출액과 매출이익`,
+      mixSubtitle: "월 매출 기준",
+      actionTitle: `${label} 핵심 실행계획`,
+      actionSubtitle: "미완료 항목 우선",
+      emptyLabel: "선택 월",
+      trendItems: [{
+        key: month,
+        label,
+        ...getTotals(records),
+      }],
+    };
+  }
 
   if (period === "year") {
     const monthKeys = Array.from({ length: 12 }, (_, index) => `${state.activeYear}-${String(index + 1).padStart(2, "0")}`);
@@ -1927,6 +2132,7 @@ function importExcelAnalysis() {
   const firstMonth = excelAnalysis.rows[0].month;
   state.activeYear = Number(firstMonth.slice(0, 4));
   state.activeQuarter = quarterFromMonth(firstMonth);
+  state.activeMonth = firstMonth;
   fillYearOptions();
   el.yearSelect.value = state.activeYear;
   el.quarterSelect.value = state.activeQuarter;
@@ -2099,8 +2305,10 @@ function getCellText(value) {
 
 function renderGoals() {
   const goal = getGoal();
-  const target = getGoalTargets(goal);
+  const target = getSelectedGoalTargets();
+  const canEdit = isEditableGoalPeriod();
   const totals = getTotals();
+  setGoalEditMode(canEdit);
   el.goalSalesInput.value = target.sales;
   el.goalProfitInput.value = target.profit;
   el.goalMarginInput.value = target.margin.toFixed(1);
@@ -2126,12 +2334,25 @@ function renderGoals() {
     })
     .join("");
 
-  renderAllocations(goal);
-  renderManagerGoalSummary(goal);
-  renderExtraGoals(goal);
+  renderAllocations(canEdit ? goal : target, { readOnly: !canEdit });
+  renderManagerGoalSummary(target);
+  renderExtraGoals(canEdit ? goal : target, { readOnly: !canEdit });
 }
 
-function renderAllocations(goal) {
+function setGoalEditMode(canEdit) {
+  [el.allocationForm, el.extraGoalForm].filter(Boolean).forEach((form) => {
+    Array.from(form.elements).forEach((field) => {
+      if (field.type !== "hidden") field.disabled = !canEdit;
+    });
+  });
+  if (!canEdit) {
+    resetAllocationForm();
+    resetExtraGoalForm();
+  }
+}
+
+function renderAllocations(goal, options = {}) {
+  const readOnly = Boolean(options.readOnly);
   const accountData = groupByAccount(getQuarterRecords());
   const editingId = el.allocationEditIdInput.value;
   const planCountOf = (account) => getAllocationActions(account).length;
@@ -2169,8 +2390,10 @@ function renderAllocations(goal) {
               <td class="num">${planCell}</td>
               <td>
                 <div class="table-actions">
-                  <button class="secondary-button" type="button" data-edit-allocation="${allocation.id}">${editingId === String(allocation.id) ? "수정중" : "수정"}</button>
-                  <button class="danger-button" type="button" data-delete-allocation="${allocation.id}">삭제</button>
+                  ${readOnly ? "<span class=\"muted\">조회</span>" : `
+                    <button class="secondary-button" type="button" data-edit-allocation="${allocation.id}">${editingId === String(allocation.id) ? "수정중" : "수정"}</button>
+                    <button class="danger-button" type="button" data-delete-allocation="${allocation.id}">삭제</button>
+                  `}
                 </div>
               </td>
             </tr>
@@ -2254,7 +2477,7 @@ function bindAllocationRowEvents() {
 
 function toggleAllocationExpand(id) {
   expandedAllocationId = expandedAllocationId === id ? null : id;
-  renderAllocations(getGoal());
+  renderGoals();
 }
 
 function renderManagerGoalSummary(goal) {
@@ -2306,8 +2529,9 @@ function renderManagerGoalSummary(goal) {
     : `<tr><td colspan="7">${emptyState("담당자별 목표 또는 실적이 없습니다.")}</td></tr>`;
 }
 
-function renderExtraGoals(goal) {
+function renderExtraGoals(goal, options = {}) {
   if (!el.extraGoalRows) return;
+  const readOnly = Boolean(options.readOnly);
   const editingId = el.extraGoalEditIdInput.value;
   const rows = sortTableRows(goal.extraGoals || [], "extraGoals", {
     category: (row) => row.category,
@@ -2335,14 +2559,18 @@ function renderExtraGoals(goal) {
               <td>${escapeHtml(row.owner || "-")}</td>
               <td>${escapeHtml(row.plan || "-")}</td>
               <td>
-                <select class="status-select" data-extra-goal-status="${row.id}">
-                  ${["예정", "진행중", "완료", "보류"].map((status) => `<option value="${status}" ${status === row.status ? "selected" : ""}>${status}</option>`).join("")}
-                </select>
+                ${readOnly ? `<span class="pill ${statusClass(row.status)}">${escapeHtml(row.status)}</span>` : `
+                  <select class="status-select" data-extra-goal-status="${row.id}">
+                    ${["예정", "진행중", "완료", "보류"].map((status) => `<option value="${status}" ${status === row.status ? "selected" : ""}>${status}</option>`).join("")}
+                  </select>
+                `}
               </td>
               <td>
                 <div class="table-actions">
-                  <button class="secondary-button" type="button" data-edit-extra-goal="${row.id}">${editingId === row.id ? "수정중" : "수정"}</button>
-                  <button class="danger-button" type="button" data-delete-extra-goal="${row.id}">삭제</button>
+                  ${readOnly ? "<span class=\"muted\">조회</span>" : `
+                    <button class="secondary-button" type="button" data-edit-extra-goal="${row.id}">${editingId === row.id ? "수정중" : "수정"}</button>
+                    <button class="danger-button" type="button" data-delete-extra-goal="${row.id}">삭제</button>
+                  `}
                 </div>
               </td>
             </tr>
@@ -3339,7 +3567,7 @@ function recanonicalizeAll() {
 }
 
 function renderReport() {
-  const goal = getGoalTargets(getGoal());
+  const goal = getSelectedGoalTargets();
   const records = getQuarterRecords();
   const totals = getTotals(records);
   const accountRows = getAccountReportRows(goal, records);
@@ -3962,6 +4190,9 @@ function quarterFromMonth(monthValue) {
 }
 
 function getDefaultDueDate() {
+  if (state.activePeriod === "month" && state.activeMonth) {
+    return `${state.activeMonth}-25`;
+  }
   const months = getQuarterMonthCodes(state.activeQuarter);
   const lastMonth = months[months.length - 1];
   return `${state.activeYear}-${lastMonth}-25`;
