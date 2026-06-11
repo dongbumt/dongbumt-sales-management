@@ -15,13 +15,15 @@ const monthByQuarter = {
   Q4: ["10", "11", "12"],
 };
 const ALL_QUARTER = "ALL";
+const GOAL_MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const GOAL_QUARTER_KEY_PATTERN = /^\d{4}-Q[1-4]$/;
 const DELETED_ID_TYPES = ["records", "itemRecords", "actions", "accounts", "allocations", "extraGoals"];
 const ACCOUNT_COMPANIES = ["동부축산유통", "동부엠티"];
 
 const viewTitles = {
   dashboard: "대시보드",
   performance: "실적 관리",
-  goals: "분기 목표",
+  goals: "월별 목표",
   actions: "실행계획",
   accounts: "거래처 분석",
   master: "거래처 마스터",
@@ -420,16 +422,16 @@ function createDefaultState() {
   return {
     version: "1.1",
     lastUpdated: "",
-    activePeriod: "quarter",
+    activePeriod: "month",
     activeYear: currentYear,
     activeQuarter: currentQuarter,
     activeMonth: currentMonthValue,
-    dashboardPeriod: "quarter",
-    accountAnalysisPeriod: "quarter",
-    accountAnalysisMonth: `${currentYear}-${monthByQuarter[currentQuarter][0]}`,
+    dashboardPeriod: "month",
+    accountAnalysisPeriod: "month",
+    accountAnalysisMonth: currentMonthValue,
     accountChartAccount: "전체",
-    itemAnalysisPeriod: "quarter",
-    itemAnalysisMonth: `${currentYear}-${monthByQuarter[currentQuarter][0]}`,
+    itemAnalysisPeriod: "month",
+    itemAnalysisMonth: currentMonthValue,
     deletedIds: normalizeDeletedIds(),
     accounts: [],
     records: [
@@ -444,25 +446,115 @@ function createDefaultState() {
       sampleRecord("2026-06", "그린유통", "신규제안", 69000000, 58400000, "돈육 후지, 갈비"),
     ],
     itemRecords: [],
-    goals: {
-      "2026-Q2": {
-        sales: 900000000,
-        profit: 112000000,
-        margin: 12.4,
-        allocations: [
-          { id: cryptoId(), account: "한빛푸드", sales: 390000000, profit: 50000000 },
-          { id: cryptoId(), account: "태성FS", sales: 270000000, profit: 32000000 },
-          { id: cryptoId(), account: "그린유통", sales: 210000000, profit: 27000000 },
-        ],
-        extraGoals: [],
-      },
-    },
+    goals: createSampleMonthlyGoals(),
     actions: [
       sampleAction("한빛푸드 월 발주량 8% 확대", "한빛푸드", "발주량 확대", "영업1팀", "2026-06-12", 30000000, 4200000, "진행중"),
       sampleAction("태성FS 냉동 우삼겹 단가 재협상", "태성FS", "단가 재협상", "영업2팀", "2026-06-18", 0, 3500000, "예정"),
       sampleAction("그린유통 갈비 품목 정규 편성", "그린유통", "신규 품목 제안", "상품기획", "2026-06-25", 24000000, 3100000, "진행중"),
     ],
   };
+}
+
+function createSampleMonthlyGoals() {
+  return distributeGoalToMonths({
+    sales: 900000000,
+    profit: 112000000,
+    margin: 12.4,
+    allocations: [
+      { id: cryptoId(), account: "한빛푸드", sales: 390000000, profit: 50000000 },
+      { id: cryptoId(), account: "태성FS", sales: 270000000, profit: 32000000 },
+      { id: cryptoId(), account: "그린유통", sales: 210000000, profit: 27000000 },
+    ],
+    extraGoals: [],
+  }, ["2026-04", "2026-05", "2026-06"]);
+}
+
+function normalizeGoals(sourceGoals = {}) {
+  const goals = {};
+  Object.entries(sourceGoals || {}).forEach(([key, goal]) => {
+    if (!key || !goal) return;
+    goals[key] = normalizeGoal(goal);
+  });
+  return migrateQuarterGoalsToMonthly(goals);
+}
+
+function normalizeGoal(goal = {}) {
+  return {
+    sales: Number(goal.sales) || 0,
+    profit: Number(goal.profit) || 0,
+    margin: Number(goal.margin) || 0,
+    allocations: Array.isArray(goal.allocations) ? goal.allocations.map(normalizeAllocation).filter(Boolean) : [],
+    extraGoals: Array.isArray(goal.extraGoals) ? goal.extraGoals.map(normalizeExtraGoal).filter(Boolean) : [],
+  };
+}
+
+function migrateQuarterGoalsToMonthly(goals = {}) {
+  const result = {};
+  Object.entries(goals).forEach(([key, goal]) => {
+    if (!isQuarterGoalKey(key)) result[key] = goal;
+  });
+  Object.entries(goals).forEach(([key, goal]) => {
+    if (!isQuarterGoalKey(key)) return;
+    const months = getMonthKeysForQuarterGoalKey(key);
+    const monthlyGoals = distributeGoalToMonths(goal, months);
+    months.forEach((monthKey) => {
+      if (!result[monthKey]) result[monthKey] = monthlyGoals[monthKey];
+    });
+  });
+  return result;
+}
+
+function distributeGoalToMonths(goal, monthKeys = []) {
+  const months = monthKeys.filter(isMonthGoalKey);
+  const source = normalizeGoal(goal);
+  const result = {};
+  if (!months.length) return result;
+
+  months.forEach((monthKey, index) => {
+    const allocations = (source.allocations || []).map((allocation) => ({
+      ...allocation,
+      id: `${allocation.id || cryptoId()}-${monthKey}`,
+      sales: splitGoalValue(allocation.sales, index, months.length),
+      profit: splitGoalValue(allocation.profit, index, months.length),
+    }));
+    const extraGoals = (source.extraGoals || []).map((extraGoal) => ({
+      ...extraGoal,
+      id: `${extraGoal.id || cryptoId()}-${monthKey}`,
+      target: splitGoalValue(extraGoal.target, index, months.length),
+      actual: splitGoalValue(extraGoal.actual, index, months.length),
+    }));
+    const sales = sum(allocations, "sales");
+    const profit = sum(allocations, "profit");
+    result[monthKey] = {
+      sales,
+      profit,
+      margin: margin(sales, profit),
+      allocations,
+      extraGoals,
+    };
+  });
+  return result;
+}
+
+function splitGoalValue(value, index, count) {
+  const number = Number(value) || 0;
+  if (count <= 1) return number;
+  const base = Math.round(number / count);
+  return index === count - 1 ? number - base * (count - 1) : base;
+}
+
+function isMonthGoalKey(key) {
+  return GOAL_MONTH_KEY_PATTERN.test(String(key || ""));
+}
+
+function isQuarterGoalKey(key) {
+  return GOAL_QUARTER_KEY_PATTERN.test(String(key || ""));
+}
+
+function getMonthKeysForQuarterGoalKey(key) {
+  const match = String(key || "").match(/^(\d{4})-(Q[1-4])$/);
+  if (!match) return [];
+  return (monthByQuarter[match[2]] || []).map((month) => `${match[1]}-${month}`);
 }
 
 function normalizeState(input) {
@@ -489,7 +581,7 @@ function normalizeState(input) {
     itemAnalysisMonth: normalizeAnalysisMonth(source.itemAnalysisMonth, activeYear, activeQuarter),
     records: Array.isArray(source.records) ? source.records.map(normalizeRecord).filter(Boolean) : fallback.records,
     itemRecords: Array.isArray(source.itemRecords) ? source.itemRecords.map(normalizeItemRecord).filter(Boolean) : fallback.itemRecords,
-    goals: source.goals && typeof source.goals === "object" && !Array.isArray(source.goals) ? source.goals : fallback.goals,
+    goals: normalizeGoals(source.goals && typeof source.goals === "object" && !Array.isArray(source.goals) ? source.goals : fallback.goals),
     actions: Array.isArray(source.actions) ? source.actions.map(normalizeAction).filter(Boolean) : fallback.actions,
     accounts: Array.isArray(source.accounts) ? source.accounts.map(normalizeAccount).filter(Boolean) : [],
     deletedIds: normalizeDeletedIds(source.deletedIds || fallback.deletedIds),
@@ -725,6 +817,7 @@ function normalizeItemRecord(record) {
 
 function normalizeAction(action) {
   if (!action || !action.title) return null;
+  const goalKey = action.goalKey || action.quarterKey || "";
   return {
     id: action.id || cryptoId(),
     title: String(action.title),
@@ -735,7 +828,8 @@ function normalizeAction(action) {
     expectedSales: Number(action.expectedSales) || 0,
     expectedProfit: Number(action.expectedProfit) || 0,
     status: action.status || "예정",
-    quarterKey: action.quarterKey || "",
+    goalKey,
+    quarterKey: action.quarterKey || goalKey,
   };
 }
 
@@ -825,11 +919,7 @@ function bindForms() {
   el.allocationForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!isEditableGoalPeriod()) {
-      showToast("목표 배분 수정은 분기별 선택에서만 가능합니다.", "error");
-      return;
-    }
-    if (el.allocationPlanTitleInput?.value.trim() && state.activeQuarter === ALL_QUARTER) {
-      showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+      showToast("목표 배분 수정은 월별 선택에서만 가능합니다.", "error");
       return;
     }
     const goal = getGoal();
@@ -860,7 +950,7 @@ function bindForms() {
     el.extraGoalForm.addEventListener("submit", (event) => {
       event.preventDefault();
       if (!isEditableGoalPeriod()) {
-        showToast("부가 목표 수정은 분기별 선택에서만 가능합니다.", "error");
+        showToast("부가 목표 수정은 월별 선택에서만 가능합니다.", "error");
         return;
       }
       const goal = getGoal();
@@ -896,10 +986,11 @@ function addAllocationPlanFromInputs(account) {
   if (!el.allocationPlanTitleInput) return false;
   const title = el.allocationPlanTitleInput.value.trim();
   if (!title) return false;
-  if (state.activeQuarter === ALL_QUARTER) {
-    showToast("실행계획은 Q1~Q4 중 하나를 선택한 뒤 추가해 주세요.", "error");
+  if (!isEditableGoalPeriod()) {
+    showToast("실행계획은 월별 목표 선택에서만 추가할 수 있습니다.", "error");
     return false;
   }
+  const goalKey = getSelectedKey();
   state.actions.push(
     normalizeAction({
       id: cryptoId(),
@@ -911,7 +1002,8 @@ function addAllocationPlanFromInputs(account) {
       expectedSales: Number(el.allocationPlanSalesInput.value) || 0,
       expectedProfit: Number(el.allocationPlanProfitInput.value) || 0,
       status: "예정",
-      quarterKey: getSelectedKey(),
+      goalKey,
+      quarterKey: goalKey,
     }),
   );
   return true;
@@ -940,6 +1032,12 @@ function bindDataActions() {
 }
 
 function setView(viewId) {
+  if (viewId === "goals" && state.activePeriod !== "month") {
+    state.activePeriod = "month";
+    state.dashboardPeriod = "month";
+    syncSelectedMonthToPeriod();
+    saveState({ localOnly: true });
+  }
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
   document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   el.viewTitle.textContent = viewTitles[viewId];
@@ -964,11 +1062,15 @@ function renderAll() {
 }
 
 function getSelectedKey() {
+  return getGoalKeyForMonth(state.activeMonth || getDefaultMonthInputValue());
+}
+
+function getSelectedQuarterKey() {
   return `${state.activeYear}-${state.activeQuarter}`;
 }
 
 function getGoalKeyForMonth(monthValue) {
-  return `${Number(monthValue.slice(0, 4))}-${quarterFromMonth(monthValue)}`;
+  return normalizeAnalysisMonth(monthValue, state.activeYear, state.activeQuarter);
 }
 
 function emptyGoal() {
@@ -997,7 +1099,7 @@ function getGoal() {
 }
 
 function isEditableGoalPeriod() {
-  return state.activePeriod === "quarter" && state.activeQuarter !== ALL_QUARTER;
+  return state.activePeriod === "month";
 }
 
 function getGoalTargets(goal = getGoal()) {
@@ -1010,16 +1112,6 @@ function getGoalTargets(goal = getGoal()) {
     profit,
     margin: margin(sales, profit),
   };
-}
-
-function scaleGoalTargets(goal, scale) {
-  const source = getGoalTargets(goal);
-  const allocations = (source.allocations || []).map((allocation) => ({
-    ...allocation,
-    sales: (Number(allocation.sales) || 0) * scale,
-    profit: (Number(allocation.profit) || 0) * scale,
-  }));
-  return getGoalTargets({ ...source, allocations });
 }
 
 function aggregateGoalDetails(keys) {
@@ -1044,15 +1136,12 @@ function aggregateGoalDetails(keys) {
 function getSelectedGoalTargets() {
   if (state.activePeriod === "month") {
     const month = state.activeMonth || getDefaultMonthInputValue();
-    return scaleGoalTargets(getGoalByKey(getGoalKeyForMonth(month)), 1 / 3);
+    return getGoalTargets(getGoalByKey(getGoalKeyForMonth(month)));
   }
   if (state.activePeriod === "year") {
-    return aggregateGoalDetails(getYearGoalKeys(state.activeYear));
+    return aggregateGoalDetails(getYearMonthKeys(state.activeYear));
   }
-  if (state.activeQuarter === ALL_QUARTER) {
-    return aggregateGoalDetails(getYearGoalKeys(state.activeYear));
-  }
-  return getGoalTargets(getGoal());
+  return aggregateGoalDetails(getSelectedMonthKeys());
 }
 
 function syncGoalTargets(goal = getGoal()) {
@@ -1143,22 +1232,42 @@ function renderAnalysisControls(kind, buttons, monthInput) {
   monthInput.disabled = period !== "month";
 }
 
+function getActionGoalKey(action) {
+  return String(action?.goalKey || action?.quarterKey || "");
+}
+
+function getQuarterKeyForMonthKey(monthKey) {
+  return `${Number(monthKey.slice(0, 4))}-${quarterFromMonth(monthKey)}`;
+}
+
 function getQuarterActions() {
   const months = getSelectedMonthKeys();
-  const key = getSelectedKey();
+  const monthKey = getSelectedKey();
+  const quarterKey = getSelectedQuarterKey();
   if (state.activePeriod === "month") {
-    return state.actions.filter((action) => months.includes(action.due.slice(0, 7)));
+    return state.actions.filter((action) => {
+      const actionMonth = action.due.slice(0, 7);
+      const actionKey = getActionGoalKey(action);
+      if (isMonthGoalKey(actionKey)) return actionKey === monthKey;
+      if (isQuarterGoalKey(actionKey)) return actionKey === getQuarterKeyForMonthKey(monthKey) && actionMonth === monthKey;
+      return actionMonth === monthKey;
+    });
   }
   if (state.activePeriod === "year") {
     return state.actions.filter((action) => {
-      if (action.quarterKey) return action.quarterKey.startsWith(`${state.activeYear}-`);
+      const actionKey = getActionGoalKey(action);
+      if (actionKey) return actionKey.startsWith(`${state.activeYear}-`);
       return action.due.startsWith(`${state.activeYear}-`);
     });
   }
   const isAll = state.activeQuarter === ALL_QUARTER;
   return state.actions.filter((action) => {
-    if (action.quarterKey) {
-      return isAll ? action.quarterKey.startsWith(`${state.activeYear}-`) : action.quarterKey === key;
+    const actionKey = getActionGoalKey(action);
+    if (isMonthGoalKey(actionKey)) {
+      return isAll ? actionKey.startsWith(`${state.activeYear}-`) : months.includes(actionKey);
+    }
+    if (isQuarterGoalKey(actionKey)) {
+      return isAll ? actionKey.startsWith(`${state.activeYear}-`) : actionKey === quarterKey;
     }
     return months.includes(action.due.slice(0, 7));
   });
@@ -1272,7 +1381,7 @@ function getDashboardContext() {
       kpiPrefix: "월",
       records,
       actions,
-      goal: scaleGoalTargets(getGoalByKey(getGoalKeyForMonth(month)), 1 / 3),
+      goal: getGoalTargets(getGoalByKey(getGoalKeyForMonth(month))),
       trendTitle: "월별 실적",
       trendSubtitle: `${label} 매출액과 매출이익`,
       mixSubtitle: "월 매출 기준",
@@ -1297,7 +1406,7 @@ function getDashboardContext() {
       kpiPrefix: "연도",
       records,
       actions,
-      goal: aggregateGoals([`${state.activeYear}-Q1`, `${state.activeYear}-Q2`, `${state.activeYear}-Q3`, `${state.activeYear}-Q4`]),
+      goal: aggregateGoals(getYearMonthKeys(state.activeYear)),
       trendTitle: "월별 실적 흐름",
       trendSubtitle: `${state.activeYear}년 월별 매출액과 매출이익`,
       mixSubtitle: "연도 매출 기준",
@@ -1323,7 +1432,7 @@ function getDashboardContext() {
       kpiPrefix: "최근 5년",
       records,
       actions,
-      goal: aggregateGoals(years.flatMap((year) => [`${year}-Q1`, `${year}-Q2`, `${year}-Q3`, `${year}-Q4`])),
+      goal: aggregateGoals(years.flatMap((year) => getYearMonthKeys(year))),
       trendTitle: "연도별 실적 흐름",
       trendSubtitle: `${years[0]}~${endYear}년 매출액과 매출이익`,
       mixSubtitle: "최근 5년 매출 기준",
@@ -1349,7 +1458,7 @@ function getDashboardContext() {
     kpiPrefix: isAllPeriod ? "전체" : "분기",
     records,
     actions,
-    goal: isAllPeriod ? aggregateGoals(getYearGoalKeys(state.activeYear)) : getGoalTargets(getGoal()),
+    goal: aggregateGoals(monthKeys),
     trendTitle: "월별 실적 흐름",
     trendSubtitle: `${label} 매출액과 매출이익`,
     mixSubtitle: isAllPeriod ? "전체 매출 기준" : "분기 매출 기준",
@@ -1381,10 +1490,6 @@ function aggregateGoals(keys) {
     profit: totals.profit,
     margin: margin(totals.sales, totals.profit),
   };
-}
-
-function getYearGoalKeys(year) {
-  return ["Q1", "Q2", "Q3", "Q4"].map((quarter) => `${year}-${quarter}`);
 }
 
 function renderTrendChart(context) {
@@ -3876,7 +3981,7 @@ function renderData() {
     dataStat("월별 실적", `${state.records.length}건`),
     dataStat("품목 실적", `${state.itemRecords.length}건`),
     dataStat("실행계획", `${state.actions.length}건`),
-    dataStat("목표 분기", `${Object.keys(state.goals).length}개`),
+    dataStat("목표 월", `${Object.keys(state.goals).filter(isMonthGoalKey).length}개`),
     dataStat("마지막 저장", state.lastUpdated || "-"),
     dataStat("파일 저장", lastFileSavedAt || "-"),
     dataStat("데이터 버전", state.version || "1.1"),
