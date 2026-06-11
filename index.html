@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>동부엠티 대기업납품 목표관리</title>
     <script src="lib/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css?v=20260611-month-goals" />
+    <link rel="stylesheet" href="styles.css?v=20260611-month-goals-plan" />
   </head>
   <body>
     <div class="app-shell">
@@ -338,7 +338,7 @@
               <div class="panel-header">
                 <div>
                   <h2>거래처별 목표 배분</h2>
-                  <p>거래처별 월 기대 매출과 이익</p>
+                  <p>거래처별 월 목표 매출과 이익</p>
                 </div>
               </div>
               <form class="allocation-form" id="allocationForm">
@@ -376,14 +376,6 @@
                 <label>
                   <span>기한</span>
                   <input id="allocationPlanDueInput" type="date" />
-                </label>
-                <label>
-                  <span>예상 매출</span>
-                  <input id="allocationPlanSalesInput" type="number" min="0" step="100000" value="0" />
-                </label>
-                <label>
-                  <span>예상 이익</span>
-                  <input id="allocationPlanProfitInput" type="number" min="0" step="10000" value="0" />
                 </label>
                 <button class="secondary-button" type="submit" id="allocationSubmitButton">배분 추가</button>
                 <button class="ghost-button" type="button" id="allocationCancelButton" hidden>수정 취소</button>
@@ -533,8 +525,6 @@
                     <th data-sort-table="actions" data-sort-key="type">유형</th>
                     <th data-sort-table="actions" data-sort-key="owner">담당</th>
                     <th data-sort-table="actions" data-sort-key="due">기한</th>
-                    <th class="num" data-sort-table="actions" data-sort-key="expectedSales" data-sort-type="number">예상 매출</th>
-                    <th class="num" data-sort-table="actions" data-sort-key="expectedProfit" data-sort-type="number">예상 이익</th>
                     <th data-sort-table="actions" data-sort-key="status">상태</th>
                     <th></th>
                   </tr>
@@ -820,6 +810,6 @@
     </div>
 
     <div class="toast-root" id="toastRoot" aria-live="polite"></div>
-    <script src="app.js?v=20260611-month-goals"></script>
+    <script src="app.js?v=20260611-month-goals-plan"></script>
   </body>
 </html>

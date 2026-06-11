@@ -114,8 +114,6 @@ const el = {
   allocationPlanTypeInput: document.querySelector("#allocationPlanTypeInput"),
   allocationPlanOwnerInput: document.querySelector("#allocationPlanOwnerInput"),
   allocationPlanDueInput: document.querySelector("#allocationPlanDueInput"),
-  allocationPlanSalesInput: document.querySelector("#allocationPlanSalesInput"),
-  allocationPlanProfitInput: document.querySelector("#allocationPlanProfitInput"),
   allocationSubmitButton: document.querySelector("#allocationSubmitButton"),
   allocationCancelButton: document.querySelector("#allocationCancelButton"),
   allocationRows: document.querySelector("#allocationRows"),
@@ -999,8 +997,8 @@ function addAllocationPlanFromInputs(account) {
       type: el.allocationPlanTypeInput.value,
       owner: el.allocationPlanOwnerInput.value.trim(),
       due: el.allocationPlanDueInput.value || getDefaultDueDate(),
-      expectedSales: Number(el.allocationPlanSalesInput.value) || 0,
-      expectedProfit: Number(el.allocationPlanProfitInput.value) || 0,
+      expectedSales: Number(el.allocationSalesInput.value) || 0,
+      expectedProfit: Number(el.allocationProfitInput.value) || 0,
       status: "예정",
       goalKey,
       quarterKey: goalKey,
@@ -1345,7 +1343,7 @@ function renderDashboard() {
     kpiCard(`${context.kpiPrefix} 매출`, won(totals.sales), `${won(goal.sales)} 목표 · ${salesRate.toFixed(1)}%`),
     kpiCard(`${context.kpiPrefix} 매출이익`, won(totals.profit), `${won(goal.profit)} 목표 · ${profitRate.toFixed(1)}%`),
     kpiCard("기간 마진율", `${totals.margin.toFixed(1)}%`, `${goal.margin.toFixed(1)}% 목표`),
-    kpiCard("실행계획 완료", `${completed}/${actions.length}`, `${won(sum(pending, "expectedSales"))} 미완료 기대효과`),
+    kpiCard("실행계획 완료", `${completed}/${actions.length}`, `${pending.length}건 미완료`),
   ].join("");
 
   el.dashboardPeriodButtons.forEach((button) => {
@@ -1545,17 +1543,15 @@ function renderGapBox(context) {
   const salesGap = Math.max(goal.sales - totals.sales, 0);
   const profitGap = Math.max(goal.profit - totals.profit, 0);
   const pending = context.actions.filter((action) => action.status !== "완료");
-  const pendingSales = sum(pending, "expectedSales");
-  const pendingProfit = sum(pending, "expectedProfit");
 
   el.gapBox.innerHTML = `
     <article class="gap-item">
       <div class="gap-row"><span>부족 매출</span><strong>${won(salesGap)}</strong></div>
-      <p>미완료 계획 반영 시 ${won(Math.max(salesGap - pendingSales, 0))} 부족</p>
+      <p>미완료 실행계획 ${pending.length}건 추적 중</p>
     </article>
     <article class="gap-item">
       <div class="gap-row"><span>부족 이익</span><strong>${won(profitGap)}</strong></div>
-      <p>미완료 계획 반영 시 ${won(Math.max(profitGap - pendingProfit, 0))} 부족</p>
+      <p>월별 목표 배분 기준으로 관리</p>
     </article>
   `;
 }
@@ -1574,7 +1570,7 @@ function renderDashboardActions(context) {
             <span class="pill ${statusClass(action.status)}">${action.status}</span>
             <h3>${escapeHtml(action.title)}</h3>
             <p>${escapeHtml(action.account)} · ${action.due}</p>
-            <p>매출 ${won(action.expectedSales)} / 이익 ${won(action.expectedProfit)}</p>
+            <p>${escapeHtml(action.type)} · ${escapeHtml(action.owner || "담당 미정")}</p>
           </article>
         `,
         )
@@ -2478,8 +2474,7 @@ function renderAllocations(goal, options = {}) {
           const plans = getAllocationActions(allocation.account);
           const expanded = expandedAllocationId === allocation.id;
           const pending = plans.filter((plan) => plan.status !== "완료");
-          const planExpected = sum(pending, "expectedSales");
-          const planCell = plans.length ? `${plans.length}건 · 기대 ${won(planExpected)}` : "-";
+          const planCell = plans.length ? `${plans.length}건 · 미완료 ${pending.length}건` : "-";
           const mainRow = `
             <tr class="allocation-row${expanded ? " expanded" : ""}">
               <td>
@@ -2515,11 +2510,9 @@ function renderAllocationDetail(allocation, actual, plans) {
   const salesGap = Math.max(allocation.sales - actual.sales, 0);
   const profitGap = Math.max(allocation.profit - actual.profit, 0);
   const pending = plans.filter((plan) => plan.status !== "완료");
-  const planSales = sum(pending, "expectedSales");
-  const planProfit = sum(pending, "expectedProfit");
-  const coverRate = salesGap > 0 ? rate(planSales, salesGap) : 100;
+  const achievementRate = rate(actual.sales, allocation.sales);
   const coverText = salesGap > 0
-    ? `미완료 계획의 기대 매출이 부족분의 ${coverRate.toFixed(0)}%를 커버합니다.`
+    ? `미완료 실행계획 ${pending.length}건을 중심으로 부족 매출을 관리합니다.`
     : "현재 매출이 목표를 이미 달성했습니다.";
   const planList = plans.length
     ? plans
@@ -2532,7 +2525,6 @@ function renderAllocationDetail(allocation, actual, plans) {
               <span class="muted">${escapeHtml(plan.type)} · ${escapeHtml(plan.owner || "담당 미정")} · ${plan.due}</span>
             </div>
             <div class="plan-side">
-              <span>매출 ${won(plan.expectedSales)} / 이익 ${won(plan.expectedProfit)}</span>
               <select class="status-select" data-plan-status="${plan.id}">
                 ${["예정", "진행중", "완료", "보류"].map((s) => `<option value="${s}" ${s === plan.status ? "selected" : ""}>${s}</option>`).join("")}
               </select>
@@ -2550,9 +2542,9 @@ function renderAllocationDetail(allocation, actual, plans) {
         <div class="allocation-gap">
           <div class="gap-row">
             <span>부족 매출 ${won(salesGap)} · 부족 이익 ${won(profitGap)}</span>
-            <span>계획 기대 매출 ${won(planSales)} · 이익 ${won(planProfit)}</span>
+            <span>실행계획 ${plans.length}건 · 미완료 ${pending.length}건</span>
           </div>
-          <div class="meter ${meterClass(coverRate, 100, 60)}"><span style="width:${Math.min(coverRate, 100)}%"></span></div>
+          <div class="meter ${meterClass(achievementRate, 100, 60)}"><span style="width:${Math.min(achievementRate, 100)}%"></span></div>
           <p class="muted">${coverText}</p>
         </div>
         <div class="plan-list">${planList}</div>
@@ -2763,8 +2755,6 @@ function resetAllocationForm() {
   el.allocationForm.reset();
   el.allocationEditIdInput.value = "";
   if (el.allocationPlanDueInput) el.allocationPlanDueInput.value = getDefaultDueDate();
-  if (el.allocationPlanSalesInput) el.allocationPlanSalesInput.value = "0";
-  if (el.allocationPlanProfitInput) el.allocationPlanProfitInput.value = "0";
   el.allocationSubmitButton.textContent = "배분 추가";
   el.allocationCancelButton.hidden = true;
 }
@@ -2788,17 +2778,14 @@ function renderActions() {
     type: (action) => action.type,
     owner: (action) => action.owner,
     due: (action) => action.due,
-    expectedSales: (action) => action.expectedSales,
-    expectedProfit: (action) => action.expectedProfit,
     status: (action) => action.status,
   }, (a, b) => a.due.localeCompare(b.due));
   if (selectedStatus !== "전체") {
     actions = actions.filter((action) => action.status === selectedStatus);
   }
 
-  const expectedSales = sum(actions, "expectedSales");
-  const expectedProfit = sum(actions, "expectedProfit");
-  el.actionSummary.textContent = `${actions.length}건 · 예상 매출 ${won(expectedSales)} · 예상 이익 ${won(expectedProfit)}`;
+  const pendingCount = actions.filter((action) => action.status !== "완료").length;
+  el.actionSummary.textContent = `${actions.length}건 · 미완료 ${pendingCount}건`;
 
   el.actionRows.innerHTML = actions.length
     ? actions
@@ -2810,8 +2797,6 @@ function renderActions() {
             <td>${escapeHtml(action.type)}</td>
             <td>${escapeHtml(action.owner)}</td>
             <td>${action.due}</td>
-            <td class="num">${won(action.expectedSales)}</td>
-            <td class="num">${won(action.expectedProfit)}</td>
             <td>
               <select class="status-select" data-action-status="${action.id}">
                 ${["예정", "진행중", "완료", "보류"].map((status) => `<option value="${status}" ${status === action.status ? "selected" : ""}>${status}</option>`).join("")}
@@ -2826,7 +2811,7 @@ function renderActions() {
         `,
         )
         .join("")
-    : `<tr><td colspan="9">${emptyState("선택한 조건의 실행계획이 없습니다.")}</td></tr>`;
+    : `<tr><td colspan="7">${emptyState("선택한 조건의 실행계획이 없습니다.")}</td></tr>`;
 
   document.querySelectorAll("[data-action-status]").forEach((select) => {
     select.addEventListener("change", () => updateActionStatus(select.dataset.actionStatus, select.value));
